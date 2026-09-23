@@ -114,7 +114,11 @@ class VeridromeCredentialManager:
             (entry["prev"] + json.dumps(entry, sort_keys=True,
                                         ensure_ascii=False)).encode("utf-8")
         ).hexdigest()
-        with open(self.ct_log_path, "a", encoding="utf-8") as f:
+        # AT-179-BULGU-1-düzeltmesi: 0644-dünya-okunabilirdi ( kanıt-gizliliği-YOK;
+        # AT-177-zincir-bütünlüğü-sağlam-AMA-izin-açık). 0600-atomik-yazım
+        # ( tamga-_secure_open-deseni).
+        _fd = os.open(self.ct_log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+        with os.fdopen(_fd, "a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
     @staticmethod
