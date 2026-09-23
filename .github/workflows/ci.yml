@@ -1,0 +1,49 @@
+name: Veridrome CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  test-and-verify:
+    name: Pytest, Playwright & Web3 Attestation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfaketime
+
+      - name: Install Python Package & Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install pytest pytest-asyncio web3 eth-utils cryptography playwright pydantic httpx starlette uvicorn
+
+      - name: Install Playwright Chromium
+        run: |
+          playwright install --with-deps chromium
+
+      - name: Run Full Pytest Suite (33+ Tests)
+        run: |
+          PYTHONPATH=src pytest tests/ -v
+
+      - name: Run E2E Live Chromium Benchmark
+        run: |
+          python scripts/run_e2e_benchmark.py
+
+      - name: Run Web3 Sepolia Testnet Dry-Run
+        run: |
+          python scripts/deploy_sepolia.py

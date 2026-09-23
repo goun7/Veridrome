@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "veridrome"
+version = "0.1.0"
+description = "Autonomous AI Agent Live Evaluation, Hardware-Attested Execution & Anti-Gaming Benchmark Harness"
+readme = "VERIDROME.md"
+authors = [{ name = "Veridrome Contributors" }]
+license = { text = "MIT" }
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.0.0",
+    "beautifulsoup4>=4.12.0",
+    "cryptography>=41.0.0",
+    "scipy>=1.11.0",
+    "numpy>=1.24.0",
+    "playwright>=1.40.0",
+    "pyyaml>=6.0",
+    "opentelemetry-api>=1.20.0",
+    "opentelemetry-sdk>=1.20.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+]
+
+[project.scripts]
+veridrome = "veridrome.cli.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra -q"
+testpaths = ["tests"]
+pythonpath = ["src"]
+
