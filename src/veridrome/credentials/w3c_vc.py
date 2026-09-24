@@ -143,6 +143,25 @@ class VeridromeCredentialManager:
         proof = vc_data["proof"]
         sig_b64 = proof["proofValue"]
 
+        # AT-185-BULGU-1-düzeltmesi: validFrom-KONTROLÜ-YOKTU. canonical-imza
+        # değişikliği-yakalar-AMA-ANAHTARI-OLAN ( veya-üreticiyi-geçersiz-kılan)
+        # yeniden-imzalamasıyla 5-YIL-SONRAYA-tarihli-VC-geçiyordu — kanıt-üretim-
+        # tarihi-protokol-tarafından-denetlenmiyordu. Artık-now >= validFrom
+        # ( ±60s-clock-skew-toleransı; AT-185-önerisi).
+        valid_from = vc_data.get("validFrom")
+        if valid_from is not None:
+            try:
+                vf = datetime.datetime.fromisoformat(
+                    str(valid_from).replace("Z", "+00:00"))
+                if vf.tzinfo is None:
+                    vf = vf.replace(tzinfo=datetime.timezone.utc)
+                _SKEW_S = 60.0
+                if datetime.datetime.now(datetime.timezone.utc) < vf - \
+                        datetime.timedelta(seconds=_SKEW_S):
+                    return False   # gelecek-tarihli-VC-RED ( fail-closed)
+            except Exception:
+                return False   # çözülemez-tarih → fail-closed
+
         # AT-168-BULGU-2-düzeltmesi: validUntil-KARŞILAŞTIRILMIYORDU — docstring
         # 'süresini-doğrular'-diyordu-AMA-dolmuş-VC-geçiyordu ( validUntil=2020
         # → True). Eski-kanıt-sonsuz-geçerliydi ( replay). Artık-süresi-dolmuş
@@ -151,12 +170,11 @@ class VeridromeCredentialManager:
         if valid_until is not None:
             try:
                 # ISO-8601-timestamp'i-epoch'a-çevir ( 'Z'-suffix-ile)
-                from datetime import datetime, timezone
-                vu = datetime.fromisoformat(
+                vu = datetime.datetime.fromisoformat(
                     str(valid_until).replace("Z", "+00:00"))
                 if vu.tzinfo is None:
-                    vu = vu.replace(tzinfo=timezone.utc)
-                if datetime.now(timezone.utc) > vu:
+                    vu = vu.replace(tzinfo=datetime.timezone.utc)
+                if datetime.datetime.now(datetime.timezone.utc) > vu:
                     return False
             except Exception:
                 return False   # çözülemez-tarih → fail-closed
