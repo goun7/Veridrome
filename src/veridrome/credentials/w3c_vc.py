@@ -92,15 +92,28 @@ class VeridromeCredentialManager:
         Şimdi-her-satır-prev+h-içerir ( tamga-ledger-deseni): h = sha256( prev +
         canonical-json) → append-only-sıranın-bütünlüğü-bağımsız-doğrulanabilir.
         """
+        # AT-183-BULGU-3-düzeltmesi: yeni-defter ( boş/eksik) ile BOZUK-defter
+        # arasındaki-fark-yoktu — bozuk-son-satır sessizce-genesis'e-bağlanıp
+        # zinciri-koparıyordu. Artık: yeni → genesis ( dürüst-yol); bozuk →
+        # fail-closed ( AT-178-TRUST_BROKEN-deseni; bağımsız-doğrulayıcı-kanıt-
+        # sıralamasına-güvenebilir).
         prev = "0" * 64
         try:
             with open(self.ct_log_path, "r", encoding="utf-8") as f:
                 lines = [ln for ln in f.read().splitlines() if ln.strip()]
-            if lines:
+        except FileNotFoundError:
+            lines = None  # yeni-defter — genesis-dürüst-yol
+        except OSError as e:
+            raise RuntimeError(f"ct_log-unreadable: {self.ct_log_path} — {e} "
+                               "( fail-closed; sessiz-genesis-YOK) — AT-183") from e
+        if lines:
+            try:
                 last = json.loads(lines[-1])
                 prev = last.get("h", "0" * 64)
-        except (OSError, ValueError, KeyError):
-            prev = "0" * 64  # yeni/bozuk-defter → genesis-bağı
+            except (ValueError, KeyError) as e:
+                raise RuntimeError(
+                    f"ct_log-broken-tail: son-satır-geçersiz — sessiz-zincir-"
+                    f"kopması-YOK ( fail-closed) — AT-183") from e
 
         entry = {
             "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
