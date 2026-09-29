@@ -40,7 +40,10 @@ def test_api_server_endpoints():
     assert res.status_code == 200
     assert "JOB_STARTED" in res.text
 
-    # 4. Get certificate
+    # AT-188: submit-evaluation-SENKRON-dur: fonksiyon-dönmeden-önce-sertifika
+    # certificates_db'ye-yazılır. job_id-çağıran-tarafından-belirlenip-koşucuya
+    # aktarılır-ki-saniye-sınırı-aşımında-farklı-job_id-üretilip-404-dönmesin
+    # ( eski-yarış-koşulu). Artık-bekleme/anket-gerekmez.
     cert_id = f"urn:veridrome:cert:{job_id}"
     res = client.get(f"/v1/certificates/{cert_id}")
     assert res.status_code == 200

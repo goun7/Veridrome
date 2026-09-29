@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 64" width="240" height="64" role="img" aria-label="Veridrome">
+  <style>
+    .v-fill { fill: #0b1020; }
+    .accent { fill: none; stroke: #2f6df6; stroke-width: 2.4; stroke-linejoin: round; stroke-linecap: round; }
+    .accent2 { fill: none; stroke: #21c07c; stroke-width: 2.4; stroke-linejoin: round; stroke-linecap: round; }
+    .name { font: 700 22px ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; fill: #0b1020; letter-spacing: 0.5px; }
+    .tag { font: 600 10.5px ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; fill: #5b6478; letter-spacing: 1.6px; }
+  </style>
+
+  <!-- Mark: a shield whose check is a verified seal, over a Merkle-root motif -->
+  <g transform="translate(6,6)">
+    <path class="accent" d="M22 2 L40 9 V25 C40 37 32 45 22 50 C12 45 4 37 4 25 V9 Z"/>
+    <!-- merkle tree: 4 leaves -> 2 -> root, inside the shield -->
+    <g transform="translate(22,26)" opacity="0.95">
+      <path class="accent2" d="M-14 12 L-6 4 M-2 12 L-6 4 M2 12 L6 4 M10 12 L6 4 M-6 4 L0 -4 M6 4 L0 -4"/>
+      <circle cx="-14" cy="13" r="2.0" fill="#21c07c"/>
+      <circle cx="-2"  cy="13" r="2.0" fill="#21c07c"/>
+      <circle cx="2"   cy="13" r="2.0" fill="#21c07c"/>
+      <circle cx="10"  cy="13" r="2.0" fill="#21c07c"/>
+      <circle cx="-6"  cy="3"  r="2.0" fill="#2f6df6"/>
+      <circle cx="6"   cy="3"  r="2.0" fill="#2f6df6"/>
+      <circle cx="0"   cy="-5" r="2.4" fill="#0b1020"/>
+    </g>
+  </g>
+
+  <text class="name" x="62" y="30">Veridrome</text>
+  <text class="tag"  x="63" y="46">TEST-PASS CERTIFICATES</text>
+</svg>

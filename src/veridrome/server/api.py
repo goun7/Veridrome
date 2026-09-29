@@ -62,6 +62,9 @@ def create_app(
 
     @app.post("/v1/evaluations/submit", status_code=status.HTTP_202_ACCEPTED)
     async def submit_evaluation(req: EvaluationSubmitRequest):
+        # AT-188: job_id-BURADA-tek-seferde-belirlenir-ve-aşağıya-aktarılır.
+        # Sertifika-üretimi-tamamen-SENKRON-dur: bu-fonksiyon-dönmeden-önce
+        # certificates_db'ye-yazılmıştır. Arka-plan-thread'i/yarış-koşulu-yok.
         job_id = f"job-{int(time.time())}-{req.agent_id[-6:]}"
         jobs_db[job_id] = {
             "status": "QUEUED",
@@ -106,6 +109,7 @@ def create_app(
             agent_id=req.agent_id,
             task_executor_fn=agent_executor,
             runs_per_task=2,
+            job_id=job_id,
         )
 
         jobs_db[job_id]["status"] = "COMPLETED"

@@ -73,11 +73,18 @@ class EvaluationRunner:
         tee_payload: Optional[Dict[str, Any]] = None,
         expected_pcr0: str = "0x98f12a4b8823901234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
         runs_per_task: int = 3,
+        job_id: Optional[str] = None,
     ) -> EvaluationReport:
         """
         Tüm görevleri n tekrar ile koşar ve nihai rapor ile sertifikayı üretir.
+
+        job_id açık-olarak-verilebilir ( çağıran-api-belirler). Verilmezse-zaman-
+        tabanlı-üretilir. AT-188-düzeltmesi: job_id-merkezi-olarak-belirlenmezse
+        saniye-sınırı-aşımında-çağıran-ve-koşucu-farklı-job_id-üretir, sertifika
+        beklenenden-farklı-bir-anahtar-altına-yazılır-ve-404-döner ( yarış-koşulu).
         """
-        job_id = f"job-{int(time.time())}-{agent_id[-6:]}"
+        if not job_id:
+            job_id = f"job-{int(time.time())}-{agent_id[-6:]}"
         challenge_nonce = generate_challenge_nonce(32)
         tasks = self.registry.list_all()
 
