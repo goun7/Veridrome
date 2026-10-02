@@ -145,10 +145,18 @@ class AntiGamingEngine:
         """
         Kapsamlı anti-gaming analizi yürütür ve birleşik kararı üretir.
         """
-        public_actions = public_actions or ["click", "type", "submit"]
-        private_actions = private_actions or ["click", "type", "submit"]
-        public_latencies = public_latencies or [10.0, 12.0, 11.0]
-        private_latencies = private_latencies or [10.5, 12.5, 11.5]
+        # [Fix-2026-10-02] 'or' degil 'is None' — bir ajan hic aksiyon
+        # yapmadiysa bos liste GERCEKTIR, uydurulmus click/type/submit
+        # ile degistirilmemeli (anti-gaming olcumu sahte veriyle
+        # yapilmasi). Ayni sinif: gaziz #10, MCPGuard, CallSnap, Deriniz.
+        if public_actions is None:
+            public_actions = ["click", "type", "submit"]
+        if private_actions is None:
+            private_actions = ["click", "type", "submit"]
+        if public_latencies is None:
+            public_latencies = [10.0, 12.0, 11.0]
+        if private_latencies is None:
+            private_latencies = [10.5, 12.5, 11.5]
 
         d_ks, p_ks = cls.kolmogorov_smirnov_test(public_scores, private_scores)
         rho_spearman, p_spearman = cls.spearman_rank_correlation(public_scores, private_scores)
