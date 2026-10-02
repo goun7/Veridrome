@@ -14,7 +14,7 @@ import numpy as np
 
 from veridrome.core.anti_gaming import AntiGamingEngine, AntiGamingMetrics
 from veridrome.core.crypto import MerkleTreeAuditLog, VeridromeAuthoritySigner, generate_challenge_nonce
-from veridrome.core.tee_attestation import TEEAttestationVerifier
+from veridrome.core.tee_attestation import TEEAttestationVerifier, AttestationResult
 from veridrome.tasks.models import PoolType, TaskSpec
 from veridrome.tasks.registry import TaskRegistry
 
@@ -155,16 +155,29 @@ class EvaluationRunner:
         )
 
         # TEE Donanım Tasdiki
-        tee_payload = tee_payload or {
-            "measurement": expected_pcr0,
-            "host_data": challenge_nonce.hex(),
-        }
-        tee_res = TEEAttestationVerifier.verify_attestation(
-            platform=tee_platform,
-            attestation_payload=tee_payload,
-            expected_pcr0=expected_pcr0,
-            expected_nonce=challenge_nonce,
-        )
+        # [Fix-2026-10-02] Eksik payload onceki kodda BEKLENEN degerlerle
+        # dolduruluyordu (self-fulfilling attestation): verify_attestation
+        # olusturulan olcumu beklenen pcr0 ile karsilastirip her seferinde
+        # geciyordu ve rapor sahte bir 'dogrulanmis olcum' tasimisti.
+        # Donanimsiz prototip akisini korumak icin simulasyonu ACIKCA
+        # etiketle: dogrulama gecer ama platform SIMULATED'dir, pcr0 bos
+        # kalir ve sertifika hardware-attested DEGILDIR.
+        if not tee_payload:
+            tee_res = AttestationResult(
+                is_valid=True,
+                platform="SIMULATED",
+                pcr0="",
+                nonce_matched=False,
+                message="Donanimsal TEE kaniti saglanmadi — SIMULATED mod; sertifika hardware-attested DEGIL",
+                claims={},
+            )
+        else:
+            tee_res = TEEAttestationVerifier.verify_attestation(
+                platform=tee_platform,
+                attestation_payload=tee_payload,
+                expected_pcr0=expected_pcr0,
+                expected_nonce=challenge_nonce,
+            )
 
         # İstatistiksel özetler
         all_task_scores = pub_scores + priv_scores

@@ -234,7 +234,12 @@ class VeridromeCredentialManager:
             "cert_id": cert_id,
             "agent_id": agent_id,
             "score_median": score_median,
-            "tee_pcr0": tee_pcr0 or ("98f12a" + "00" * 29),
+            # [Fix-2026-10-02] Eksik PCR0 onceki kodda SABIT sahte bir
+            # degerle dolduruluyordu ('98f12a' + 0x00*29). Bu, runner'daki
+            # SIMULATED etiketini atlayip sertifikaya dogrudan sahte bir
+            # donanim olcumu yaziyordu — tuketici donanim kaniti olmadigini
+            # goremeyebilir. Eksik = bos string (honest absence).
+            "tee_pcr0": tee_pcr0 or "",
             "issued_at": now,
             "expires_at": now + expires_in_sec,
         }
