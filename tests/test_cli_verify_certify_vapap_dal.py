@@ -204,19 +204,31 @@ class TestCommandVerify:
         rc = command_verify(yol)
         assert rc == 0
 
-    def test_verify_eski_w3c_vc_pubkey_yolu(self, tmp_path, capsys):
-        # yol-2: did:key değil → --pubkey ile eski W3C-VC doğrulama
-        signer = VeridromeAuthoritySigner()
+    def _w3c_vc(self, signer, monkeypatch, *, metrics=None):
+        """W3C-VC üret; CT-defterine YAZMAZ (KURAL-1: ct_log.jsonl dokunulmaz).
+
+        ``issue_credential`` RFC 6962 CT-defterine append yapar; bu dal-kesme
+        testleri yalnızca ``command_verify``'ın eski-W3C-VC yolunu sınlar.
+        """
         from veridrome.credentials.w3c_vc import VeridromeCredentialManager as _M
+        # CT-defteri yazımını devre dışı bırak (mevcut dosyaya dokunma-YASAK)
+        monkeypatch.setattr(_M, "_append_to_ct_log", lambda self, vc: None,
+                            raising=False)
         vc, _token = _M(signer=signer).issue_credential(
             job_id="job-legacy",
             agent_id="urn:agent:legacy",
-            metrics={"medianSuccess": 0.9, "anomalyScore": 0.1},
+            metrics=metrics or {"medianSuccess": 0.9, "anomalyScore": 0.1},
             tee_platform="simulated-tee",
             pcr0_measurement="0" * 64,
             merkle_root="0x" + "ab" * 32,
             validity_days=365,
         )
+        return vc
+
+    def test_verify_eski_w3c_vc_pubkey_yolu(self, tmp_path, capsys, monkeypatch):
+        # yol-2: did:key değil → --pubkey ile eski W3C-VC doğrulama
+        signer = VeridromeAuthoritySigner()
+        vc = self._w3c_vc(signer, monkeypatch)
         yol = str(tmp_path / "legacy.json")
         with open(yol, "w", encoding="utf-8") as f:
             json.dump(vc, f, ensure_ascii=False)
@@ -233,20 +245,12 @@ class TestCommandVerify:
         assert "GEÇERLİ" in out
         assert "%90.00" in out  # medianSuccess raporu
 
-    def test_verify_eski_w3c_vc_gecersiz_imza(self, tmp_path, capsys):
+    def test_verify_eski_w3c_vc_gecersiz_imza(self, tmp_path, capsys, monkeypatch):
         # güvenlik: imza farklı anahtarla yapılmışsa reddet
         signer1 = VeridromeAuthoritySigner()
         signer2 = VeridromeAuthoritySigner()
-        from veridrome.credentials.w3c_vc import VeridromeCredentialManager as _M
-        vc, _token = _M(signer=signer1).issue_credential(
-            job_id="job-legacy",
-            agent_id="urn:agent:legacy",
-            metrics={"medianSuccess": 0.9},
-            tee_platform="simulated-tee",
-            pcr0_measurement="0" * 64,
-            merkle_root="0x" + "ab" * 32,
-            validity_days=365,
-        )
+        vc = self._w3c_vc(signer1, monkeypatch,
+                          metrics={"medianSuccess": 0.9})
         yol = str(tmp_path / "legacy.json")
         with open(yol, "w", encoding="utf-8") as f:
             json.dump(vc, f, ensure_ascii=False)
@@ -256,19 +260,11 @@ class TestCommandVerify:
         assert rc == 1
         assert "GEÇERSİZ" in capsys.readouterr().out
 
-    def test_verify_eski_w3c_vc_proofvalue_yoksa(self, tmp_path, capsys):
+    def test_verify_eski_w3c_vc_proofvalue_yoksa(self, tmp_path, capsys, monkeypatch):
         # güvenlik: proofValue eksikse reddet
         signer = VeridromeAuthoritySigner()
-        from veridrome.credentials.w3c_vc import VeridromeCredentialManager as _M
-        vc, _token = _M(signer=signer).issue_credential(
-            job_id="job-legacy",
-            agent_id="urn:agent:legacy",
-            metrics={"medianSuccess": 0.9},
-            tee_platform="simulated-tee",
-            pcr0_measurement="0" * 64,
-            merkle_root="0x" + "ab" * 32,
-            validity_days=365,
-        )
+        vc = self._w3c_vc(signer, monkeypatch,
+                          metrics={"medianSuccess": 0.9})
         del vc["proof"]["proofValue"]
         yol = str(tmp_path / "legacy.json")
         with open(yol, "w", encoding="utf-8") as f:
