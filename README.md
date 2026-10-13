@@ -227,12 +227,14 @@ RFC-8032 §7.1 **resmi test-vektörleri** ile çapraz-doğrulanmıştır
 ## Test
 
 ```bash
-python3 -m pytest tests/ -q     # 121-passed
+python3 -m pytest tests/ -q     # 784-passed
 ```
 
-Son koşum: **121 passed** ( sertifika-çekirdek 30, did:key 29, sertifika-
-ürütm-hattı 5, Tamga/Veridict-sabitleme 18, API/CLI/runner/diğer-modüller
-39). Hızlı-geri-bildirim için `-x` ve `--ff` desteklenir.
+Son koşum ( 2026-10-13 LEED-ölçümü): **784 passed, 0 failed rc=0**.
+Önceki koşumda 121 olarak-yazılmıştı — bu sayı STALE'di; mevcut
+suit 30 test-dosyasında 784 testi kapsar ( sertifika-çekirdek, did:key,
+sertifika-ürütm-hattı, Tamga/Veridict-sabitleme, API/CLI/runner ve
+diğer-modüller). Hızlı-geri-bildirim için `-x` ve `--ff` desteklenir.
 
 ---
 
