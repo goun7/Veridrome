@@ -227,10 +227,10 @@ RFC-8032 §7.1 **resmi test-vektörleri** ile çapraz-doğrulanmıştır
 ## Test
 
 ```bash
-python3 -m pytest tests/ -q     # 997-passed
+python3 -m pytest tests/ -q     # 1.231-passed
 ```
 
-Son koşum ( 2026-10-14 LEED-ölçümü): **997 passed, 0 failed rc=0**.
+Son koşum ( 2026-10-14 LEED-ölçümü): **1.231 passed, 0 failed rc=0**.
 Önceki koşumda 121 olarak-yazılmıştı — bu sayı STALE'di; mevcut
 suit 30 test-dosyasında 784 testi kapsar ( sertifika-çekirdek, did:key,
 sertifika-ürütm-hattı, Tamga/Veridict-sabitleme, API/CLI/runner ve
