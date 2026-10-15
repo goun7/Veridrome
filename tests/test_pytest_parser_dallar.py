@@ -210,7 +210,9 @@ class TestModulYuzu:
     def test_verbose_regex_module_seviyesinde_derlenmis(self) -> None:
         assert hasattr(_parser_mod, "_VERBOSE_RE")
         assert _parser_mod._VERBOSE_RE.pattern.startswith("^(?P<nodeid>.+?)")
-        assert "(?P<outcome>PASSED|FAILED|SKIPPED|ERROR|XFAIL|XPASSED)" in _parser_mod._VERBOSE_RE.pattern
+        # DALGA-6-B1-DUZELTME: XPASS alternasyona eklendi (pytest -v yazar).
+        assert "(?P<outcome>PASSED|FAILED|SKIPPED|ERROR|XFAIL|XPASS|XPASSED)" \
+            in _parser_mod._VERBOSE_RE.pattern
 
 
 # ===========================================================================
@@ -569,15 +571,13 @@ class TestParseVerboseStdout:
         girdiler = _parser_mod._parse_verbose_stdout("tests/a.py::test_n PASSED [ 10%]\r\n")
         assert girdiler == [{"name": "tests/a.py::test_n", "outcome": "passed"}]
 
-    def test_xpass_dusulur_bulgu(self) -> None:
-        """D18 (BULGU — dokunulmadı): pytest 'XPASS' yazar, regex 'XPASSED' bekler.
-
-        Sonuç: xpass eden testler son-çare (verbose-stdout) yolunda SESSİZCE
-        düşürülür — özet sayısı gerçekten azalır. Üretim kaynağı:
-        pytest_parser.py:118-120 (_VERBOSE_RE alternasyonu).
-        """
+    def test_xpass_ayristirilir_duzeltildi(self) -> None:
+        """D18 (BULGU DUZELTILDI — DALGA-6-B1): pytest 'XPASS' yazar, regex
+        artik XPASS'u da eslestiriyor — xpass eden testler son-çare
+        (verbose-stdout) yolunda dusurulmuyor, ozet sayisi gercek.
+        Uretim kaynagi: pytest_parser.py:118-120 (alternasyon)."""
         girdiler = _parser_mod._parse_verbose_stdout("tests/a.py::test_xp XPASS [ 50%]")
-        assert girdiler == []
+        assert girdiler == [{"name": "tests/a.py::test_xp", "outcome": "xpass"}]
 
     def test_xpassed_ayristirilir_kaynak_disi(self) -> None:
         """D18: 'XPASSED' (pytest'in hiç yayınlamadığı kelime) eşleşir — gap kanıtı."""

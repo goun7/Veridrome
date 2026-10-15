@@ -115,8 +115,12 @@ def run_pytest_json(
 # sessizce düşürür ve sertifika-özetini yanlış sayar ( 98→94). Bu yüzden
 # nodeid boşluklara-izin-veren-greedy-olmayan gruptur; outcome, satırdaki
 # ilk büyük-harfli-anahtar-kelime olarak eşleşir.
+# DALGA-6-B1-DUZELTME: pytest -v xpass-sonuclarini "XPASSED" DEGIL "XPASS"
+# yazar — eski o rutu tum xpass satirlarini dusuruyordu (sertifika-ozeti
+# gercekte-az). XPASS de, sinonir-kozmesi olarak XPASSED de kalir.
 _VERBOSE_RE = re.compile(
-    r"^(?P<nodeid>.+?)\s+(?P<outcome>PASSED|FAILED|SKIPPED|ERROR|XFAIL|XPASSED)(?:\s|$)"
+    r"^(?P<nodeid>.+?)\s+(?P<outcome>PASSED|FAILED|SKIPPED|ERROR|XFAIL|XPASS|XPASSED)"
+    r"(?:\s|$)"
 )
 
 
