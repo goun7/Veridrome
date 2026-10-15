@@ -162,7 +162,11 @@ def normalize_results(raw: Any) -> List[Dict[str, Any]]:
             entries = raw["tests"]
         # JUnit-benzeri tekil
         elif "testcase" in raw:
-            entries = [raw]
+            ic = raw["testcase"]
+            # VD-CORE-B5 (DUZELTILDI): icice-zarf {'testcase': {name,result,...}}
+            # eskiden-zarfin-kendisini-girdi-saniyordu (name/outcome-yok-bos-
+            # entries). Deger-bir-dictse-o-gercek-kayit-olarak-acilir.
+            entries = [ic] if isinstance(ic, dict) else [raw]
         else:
             entries = [raw]
     else:

@@ -41,6 +41,11 @@ def parse_pytest_json(path: str) -> Dict[str, Any]:
         raise FileNotFoundError(f"pytest JSON raporu bulunamadı: {path}") from exc
     except json.JSONDecodeError as exc:
         raise ValueError(f"pytest JSON raporu geçersiz JSON: {path} — {exc}") from exc
+    except OSError as exc:
+        # VD-PARSE-B2: dizin/izin-hatalari-islenmemis-ham OSError-oluyordu (
+        # IsADirectoryError-dahil) — cagrana-sozlesme ValueError-ile-fail-closed
+        # ( FileNotFoundError-yukarida-tutulur-ona-dokunma).
+        raise ValueError(f"pytest JSON raporu okunamiyor: {path} — {exc}") from exc
 
     entries = normalize_results(data)
     summary = summarize(entries)

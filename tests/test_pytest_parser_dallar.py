@@ -298,16 +298,15 @@ class TestParsePytestJsonBasari:
         sonuc = _parser_mod.parse_pytest_json(_rapor_yaz(str(tmp_path), rapor))
         assert sonuc["entries"] == [{"name": "TestX", "outcome": "passed"}]
 
-    def test_icice_testcase_zarfi_acilmaz(self, tmp_path: str) -> None:
-        """D8 (uç-dağılım, gözlem): {'testcase': {...}} iç-içe biçim açılmaz.
-
-        normalize_results'in 'testcase' dalı zarfın KENDİSİNİ girdi alır; içteki
-        name/outcome alanlarına bakılmaz → boş entries (core.py davranışı).
-        """
+    def test_icice_testcase_zarfi_acilir(self, tmp_path: str) -> None:
+        """D8 (VD-CORE-B5, DUZELTILDI): {'testcase': {name,result}}-icice-zarf
+        artik-acilir — eskiden-zarfin-kendisi-girdi-alinip-bos-entries-
+        donuyordu (icteki-name/outcome-alanlarina-bakilmiyordu)."""
         rapor = {"testcase": {"name": "TestX", "classname": "mod", "result": "passed"}}
         sonuc = _parser_mod.parse_pytest_json(_rapor_yaz(str(tmp_path), rapor))
-        assert sonuc["entries"] == []
-        assert sonuc["summary"]["total"] == 0
+        assert sonuc["entries"] == [{"name": "TestX", "outcome": "passed"}]
+        assert sonuc["summary"]["total"] == 1
+        assert sonuc["summary"]["passed"] == 1
 
 
 # ===========================================================================
@@ -334,13 +333,12 @@ class TestParsePytestJsonBasarisiz:
         with pytest.raises(ValueError):
             _parser_mod.parse_pytest_json(yol)
 
-    def test_dizin_yolu_isadirectoryerror(self, tmp_path: str) -> None:
-        """D7 (uç-dağılım, BULGU): dizin yolu yakalanmamış IsADirectoryError fırlatır.
-
-        except FileNotFoundError / json.JSONDecodeError — IsADirectoryError
-        kardeş sınıf olduğu için yakalanmaz; sarmalanmadan doğrudan yayılır.
+    def test_dizin_yolu_valueerror_sarmali(self, tmp_path: str) -> None:
+        """D7 (VD-PARSE-B2, DUZELTILDI): dizin/izin-hatalari artik-ValueError-
+        sarilmis-doner — IsADirectoryError-ile-ayni-ailede-oldugu-icin-once
+        sarmalanmamis-yayiliyordu (cagrana-sozlesme-tek-tipli-hata).
         """
-        with pytest.raises(IsADirectoryError):
+        with pytest.raises(ValueError, match="okunamiyor"):
             _parser_mod.parse_pytest_json(str(tmp_path))
 
     @pytest.mark.parametrize(
