@@ -884,12 +884,13 @@ class TestReadLedger:
         recs = read_ledger(str(p))
         assert len(recs) == 1 and "pad" in recs[0]
 
-    def test_gecersiz_utf8_unicode_hata_firlatir(self, tmp_path):
-        # D10 — BULGU-B2: decode yinelemede ( try DIŞINDA) → UnicodeDecodeError
+    def test_gecersiz_utf8_sentinel_olarak_yutulur_ancank_b2(self, tmp_path):
+        # D10 — ANCANK-B2 (DUZELTILDI): artik-ikili-modda-acilir-ve-gecersiz-
+        # UTF-8-satiri-bozuk-satir-sentineline-donuser ( okuyucu-cokmez).
         p = tmp_path / "kotu.jsonl"
         p.write_bytes(b'{"h":"aa"}\n\xff\xfe\x00\n{"h":"bb"}\n')
-        with pytest.raises(UnicodeDecodeError):
-            read_ledger(str(p))
+        recs = read_ledger(str(p))
+        assert recs[1] == {} and len(recs) == 3
 
     def test_olmayan_dosya_oserror(self, tmp_path):
         # D11
@@ -1556,15 +1557,16 @@ class TestVerifySozlesmeGaci:
         with pytest.raises(AttributeError):
             verify(sc)
 
-    def test_gecersiz_utf8_ledger_unicode_error(self, tmp_path):
-        # D6 — read_ledger UnicodeDecodeError fırlatır, verify SIZAR
+    def test_gecersiz_utf8_ledger_reddeder_ancank_b2(self, tmp_path):
+        # D6 — ANCANK-B2 (DUZELTILDI): gecersiz-UTF-8-ledger-artik-
+        # UnicodeDecodeError-sizmaz-verify-zincir-kirikligi-ile-reddeder.
         p = tmp_path / "kotu.jsonl"
         p.write_bytes(b'{"h":"aa"}\n\xff\xfe\x00\n')
         sc = {"anchor_version": TAMGA_ANCHOR_VERSION,
               "tamga": {"ledger": str(p), "seq": 1, "h": "aa"},
               "bound": {"cert_id": "c"}, "digest": ""}
-        with pytest.raises(UnicodeDecodeError):
-            verify(sc)
+        sonuc = verify(sc)
+        assert sonuc["valid"] is False and sonuc["errors"]
 
 
 # ===========================================================================

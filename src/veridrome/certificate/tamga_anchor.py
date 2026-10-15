@@ -334,16 +334,21 @@ def read_ledger(path: str) -> List[Dict[str, Any]]:
     denetimi onu kırık işaretler ( fail-closed) ve okuyucu çökmez.
     """
     recs: List[Dict[str, Any]] = []
-    with open(path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
+    # ANCANK-B2 (DUZELTILDI): eskiden-metin-modunda-aciliyordu — gecersiz-UTF-8
+    # baytlari-UnicodeDecodeError-firlatiyordu-VE-o-satir-satır-dongusunun-
+    # try-disinda-oldugu-icin-tum-okumayi-cokertiyordu ( verify-yalniz-OSError
+    # yakaladigi-icin-sizma). Ikili-modda-acip-her-satiri-try-icinde-cozuyoruz:
+    # gecersiz-kodlama-da-bozuk-satir-sentinel'ine-donusur ( fail-closed).
+    with open(path, "rb") as f:
+        for raw in f:
+            line = raw.strip()
             if not line:
                 continue
             try:
-                if len(line.encode("utf-8")) > MAX_LINE_BYTES:
+                if len(line) > MAX_LINE_BYTES:
                     recs.append({})    # satır-bombası: yutmadan sentinel
                     continue
-                recs.append(json.loads(line))
+                recs.append(json.loads(line.decode("utf-8")))
             except Exception:
                 recs.append({})        # bozuk-satır → zincir-denetimi yakalar
     return recs
