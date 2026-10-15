@@ -36,7 +36,9 @@ MODUL-ANATOMISI (olculen dallar, kaynak: src/veridrome/core/tee_attestation.py):
     D16 payload'da ozel policy/family_id → claims'e yansir
     D17 pcr0 buyuk/kucuk harf duyarsiz eslesme (L92 .lower())
     D18 nonce tam hex eslesmesi (L93 == dalı)
-    D19 nonce ontek eslesmesi (L93 startswith expected_hex[:16])
+    D19 (BULGU-1/2, DUZELTILDI) nonce ontek-eslesmesi ARTIK reddedilir —
+        tam-uzunluk esitligi zorunlu; bos-beklenen fail-closed ("" ile
+        startswith her zaman True idi — fail-open)
     D20 pcr0 uyusmazligi → "PCR0 veya Nonce Uyuşmazlığı" (L104-105)
     D21 nonce uyusmazligi → ayni mesaj (L104-105)
     D22 imza mevcut + gecersiz → "AMD SEV-SNP Kriptografik Donanım İmzası
@@ -55,7 +57,8 @@ MODUL-ANATOMISI (olculen dallar, kaynak: src/veridrome/core/tee_attestation.py):
     D32 imza gecersiz → "AWS Nitro Enclave Kriptografik Donanım İmzası
         Geçersiz" (L146-147)
     D33 imza gecerli (P-256, base64 str) → is_valid=True
-    D34 user_data ontek eslesmesi (L133)
+    D34 (BULGU-1/2, DUZELTILDI) user_data ontek-eslesmesi ARTIK reddedilir —
+        tam-uzunluk zorunlu (L133 eski startswith dalı kapatıldı)
 - PhysicalTEEHardwareDriver.detect_hardware_tee (classmethod, L170-178):
     D35 /dev/sev-guest mevcut → "AMD-SEV-SNP" (L174-175)
     D36 /dev/nsm mevcut → "AWS-NITRO" (L176-177)
@@ -410,13 +413,15 @@ class TestSevSnpDogrulama:
         sonuc = self._dogrula(_sev_payload(host_data=nonce.hex()), expected_nonce=nonce)
         assert sonuc.nonce_matched is True
 
-    def test_nonce_ontek_eslesmesi(self):
-        """D19: host_data ontek (ilk 16 hex) eslesmesi yeterli (BULGU-1)."""
+    def test_nonce_ontek_eslesmesi_reddedilir(self):
+        """D19 (BULGU-1/2, DUZELTILDI): ontek (ilk 16 hex) eslesmesi ARTIK
+        yetmez — tam-uzunluk esitligi zorunlu; kalan-kisim farkliysa
+        nonce_matched=False (eski startswith-fail-open'u kapandi)."""
         nonce = bytes.fromhex("aa" * 32)
-        host_data = nonce.hex()[:16] + "ffffffff" * 28  # kalan kisim serbest
+        host_data = nonce.hex()[:16] + "ffffffff" * 28  # kalan kisim serbest-DEGIL
         sonuc = self._dogrula(_sev_payload(host_data=host_data), expected_nonce=nonce)
-        assert sonuc.nonce_matched is True
-        assert sonuc.is_valid is True
+        assert sonuc.nonce_matched is False
+        assert sonuc.is_valid is False
 
     def test_pcr0_uyusmazligi(self):
         """D20: pcr0 uyusmazligi → 'PCR0 veya Nonce Uyuşmazlığı'."""
@@ -484,20 +489,26 @@ class TestSevSnpDogrulama:
         assert sonuc.pcr0 == ""
         assert sonuc.message == "PCR0 veya Nonce Uyuşmazlığı"
 
-    def test_bos_nonce_kontrolu_her_seyi_gectirir(self):
-        """BULGU-2: bos expected_nonce → startswith("") her zaman True."""
+    def test_bos_nonce_kontrolu_her_seyi_gectirmez(self):
+        """BULGU-2 (DUZELTILDI): bos expected_nonce ARTIK fail-closed —
+        startswith("") her zaman True idi (fail-open); yeni sozlesmede
+        bos-beklenen ASLA eslesmez."""
         sonuc = self._dogrula(
             _sev_payload(host_data="ff" * 32), expected_nonce=b"",
         )
-        assert sonuc.nonce_matched is True
+        assert sonuc.nonce_matched is False
+        assert sonuc.is_valid is False
 
-    def test_tek_basina_imza_alani_atlanir(self):
-        """BULGU-3: yalnizca 'signature' var, 'public_key' yok → sig kontrolu atlanir."""
+    def test_tek_basina_imza_alani_fail_closed(self):
+        """BULGU-3 (DUZELTILDI): yalnizca 'signature' var, 'public_key' yok →
+        imza-kontrolu sessizce ATLANMAZ, fail-closed reddeder (eskiden
+        is_valid=True donuyordu — bypass)."""
         nonce = bytes.fromhex("aa" * 32)
         payload = _sev_payload(host_data=nonce.hex())
         payload["signature"] = "AAAA"
         sonuc = self._dogrula(payload, expected_nonce=nonce)
-        assert sonuc.is_valid is True
+        assert sonuc.is_valid is False
+        assert sonuc.message == "AMD SEV-SNP Kriptografik Donanım İmzası Geçersiz"
 
 
 # == _verify_aws_nitro ==============================================================================
@@ -592,22 +603,26 @@ class TestAwsNitroDogrulama:
         assert sonuc.is_valid is True
         assert sonuc.message == "AWS Nitro Enclave Attestation Verified"
 
-    def test_user_data_ontek_eslesmesi(self):
-        """D34: user_data ontek (ilk 16 hex) eslesmesi yeterli (BULGU-1)."""
+    def test_user_data_ontek_eslesmesi_reddedilir(self):
+        """D34 (BULGU-1/2, DUZELTILDI): user_data ontek (ilk 16 hex) eslesmesi
+        ARTIK yetmez — tam-uzunluk zorunlu; kalan-kisim farkliysa
+        nonce_matched=False."""
         nonce = bytes.fromhex("bb" * 32)
-        user_data = nonce.hex()[:16] + "eeee" * 28
+        user_data = nonce.hex()[:16] + "eeee" * 28  # kalan kisim serbest-DEGIL
         sonuc = self._dogrula(
             {"pcrs": {"0": PCR0_NITRO}, "user_data": user_data}, expected_nonce=nonce,
         )
-        assert sonuc.nonce_matched is True
-        assert sonuc.is_valid is True
+        assert sonuc.nonce_matched is False
+        assert sonuc.is_valid is False
 
-    def test_bos_pcr0_ve_bos_nonce_gecerli_sayilir(self):
-        """BULGU-4: bos pcr0 ('') + bos expected_pcr0 + bos nonce → gecerli."""
+    def test_bos_pcr0_ve_bos_nonce_reddedilir(self):
+        """BULGU-4 (DUZELTILDI): bos pcr0 ('') + bos expected_pcr0 + bos nonce
+        ARTIK gecerli SAYILMAZ — pcr0-bos fail-closed (eski davranista
+        uyusmazlik-yok sayiliyordu)."""
         sonuc = self._dogrula({"pcrs": {}, "user_data": ""}, expected_pcr0="", expected_nonce=b"")
         assert sonuc.pcr0 == ""
-        assert sonuc.is_valid is True
-        assert sonuc.message == "AWS Nitro Enclave Attestation Verified"
+        assert sonuc.is_valid is False
+        assert sonuc.message == "PCR0 veya UserData Uyuşmazlığı"
 
 
 # == detect_hardware_tee ============================================================================

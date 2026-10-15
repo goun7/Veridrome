@@ -56,6 +56,33 @@ class TEEAttestationVerifier:
     verify_mock_or_real = verify_attestation
 
     @staticmethod
+    def _norm_hex(deger) -> str:
+        """BULGU-4 (DUZELTILDI): hex-alanlarini-kanonik-kucuk-harfe-indirger.
+
+        Bosluk/0x-oneki/tirnak-temizlenir; hex-degilse-bos-string ( fail-closed).
+        """
+        if not isinstance(deger, str):
+            return ""
+        t = deger.strip().strip('"').strip("'")
+        if t[:2].lower() == "0x":
+            t = t[2:]
+        t = t.replace(" ", "").replace(":", "").replace("-", "")
+        return t.lower()
+
+    @classmethod
+    def _nonce_eslesir(cls, gelen, beklenen: str) -> bool:
+        """BULGU-1/2/4 (DUZELTILDI): TAM-uzunluk-esitligi-ister.
+
+        Bos-beklenen-ASLA-eslesmez ( eski-startswith("")-fail-open'u-kapatildi)
+        ve-kisa-onek-eslesmesi ( ilk-8-bayt) kaldirildi.
+        """
+        b = cls._norm_hex(beklenen)
+        g = cls._norm_hex(gelen)
+        if not b or not g:
+            return False
+        return g == b
+
+    @staticmethod
     def _verify_crypto_signature(public_key_pem: str, data_bytes: bytes, signature_bytes: bytes) -> bool:
         """ECDSA P-384 veya P-256 donanım imzasını doğrular."""
         try:
@@ -89,12 +116,22 @@ class TEEAttestationVerifier:
         expected_host_hex = expected_nonce.hex()
 
         # Measurement ve Nonce denetimi
-        pcr_valid = (pcr0.lower() == expected_pcr0.lower())
-        nonce_valid = (host_data.lower() == expected_host_hex.lower() or host_data.startswith(expected_host_hex[:16]))
+        # BULGU-4 (DUZELTILDI): kanonik-hex-normalizasyonu ( 0x-oneki/bosluk/
+        # kucuk-buyuk-harf) — duz-string-karsilastirmasi-yanlisti.
+        pcr_valid = (cls._norm_hex(pcr0) != ""
+                     and cls._norm_hex(pcr0) == cls._norm_hex(expected_pcr0))
+        # BULGU-1/2 (DUZELTILDI): tam-uzunluk + bos-beklenen-reddi.
+        nonce_valid = cls._nonce_eslesir(host_data, expected_host_hex)
 
         # Opsiyonel Kriptografik Donanım İmzası Kontrolü
         sig_valid = True
-        if "signature" in payload and "public_key" in payload:
+        # BULGU-3 (DUZELTILDI): tek-alan-varsa-sessizce-atlanmiyor-artik
+        # ( eksik-eslesme-fail-closed).
+        _sig_var = "signature" in payload
+        _pk_var = "public_key" in payload
+        if _sig_var != _pk_var:
+            sig_valid = False
+        if _sig_var and _pk_var:
             import base64
             sig_raw = base64.b64decode(payload["signature"]) if isinstance(payload["signature"], str) else payload["signature"]
             data_to_verify = f"{pcr0}:{host_data}".encode("utf-8")
@@ -129,12 +166,19 @@ class TEEAttestationVerifier:
         user_data = payload.get("user_data", "")
         expected_nonce_hex = expected_nonce.hex()
 
-        pcr_valid = (pcr0.lower() == expected_pcr0.lower())
-        nonce_valid = (user_data.lower() == expected_nonce_hex.lower() or user_data.startswith(expected_nonce_hex[:16]))
+        # BULGU-4 (DUZELTILDI): kanonik-hex-normalizasyonu.
+        pcr_valid = (cls._norm_hex(pcr0) != ""
+                     and cls._norm_hex(pcr0) == cls._norm_hex(expected_pcr0))
+        # BULGU-1/2 (DUZELTILDI): tam-uzunluk + bos-beklenen-reddi.
+        nonce_valid = cls._nonce_eslesir(user_data, expected_nonce_hex)
 
         # Opsiyonel COSE/ECDSA Donanım İmzası Kontrolü
         sig_valid = True
-        if "signature" in payload and "public_key" in payload:
+        _sig_var = "signature" in payload
+        _pk_var = "public_key" in payload
+        if _sig_var != _pk_var:
+            sig_valid = False
+        if _sig_var and _pk_var:  # BULGU-3: iki-alan-da-zorunlu ( eksikse-ustte-False)
             import base64
             sig_raw = base64.b64decode(payload["signature"]) if isinstance(payload["signature"], str) else payload["signature"]
             data_to_verify = f"{pcr0}:{user_data}".encode("utf-8")
