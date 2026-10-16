@@ -15,8 +15,8 @@ DAL HARİTASI (D1..D48):
     D1  varsayılan create_app() FastAPI uygulaması üretir (title/version)
     D2  modül-seviyesi `app` tekil FastAPI örneğidir; her create_app yenisi
     D3  verilen koşucu (runner) birebir kullanılır (çağrım kaydıyla kanıtlanır)
-    D4  verilen credential_manager kabul edilir ama hiçbir uçnoktada kullanılmaz
-        (BULGU B2: ölü parametre — doğrulama sınıf-metodu + uygulamanın imzalayıcısı)
+    D4  verilen credential_manager doğrulama uçnoktasında KULLANILIR
+        (SERVER-API-B2 düzeltildi: ölü-parametre-artık-değil — karar enjektelerin)
     D5  koşucu verilmezse gerçek EvaluationRunner kurulur ve tam koşum çalışır
   dashboard/healthz:
     D6  GET / → 200 + text/html + DASHBOARD_HTML birebir
@@ -26,13 +26,13 @@ DAL HARİTASI (D1..D48):
     D9  manifest.cost_cap_usd varsayılanı (10.0) kabul edilir
     D10 geçersiz türler (cost_cap_usd dize) → 422
   submit — simüle-etki-alanı dalları:
-    D11 acme.ai/internal/example.com/mock alt-dizeleri → httpx ÇAĞRILMAZ
-        (BULGU B3: altdizge eşleşmesi "https://evil.example/?x=acme.ai" yi de simüle sayar)
+    D11 HOST-ADI eşleşmesi (tam veya alt-alan) → httpx ÇAĞRILMAZ
+        (SERVER-API-B3 düzeltildi: sorgu-dizesi "acme.ai" artık simüle DEĞİL — D11b)
     D12 http şeması ile başlamayan URL → baseline (httpx çağrılmaz)
     D13 boş endpoint_url → baseline
     D14 başarılı koşum → 202 + yanıt gövdesi sabit alanları
-    D15 D14: yanıt "status":"PROCESSING" derken koşum SENKRON tamamlanmıştır
-        (BULGU B1: jobs_db'de COMPLETED — API sözleşmesi yanıltıcı)
+    D15 koşum SENKRON bittiği için yanıt "status":"COMPLETED" der
+        (SERVER-API-B1 düzeltildi: yanıltıcı "PROCESSING" kaldırıldı)
   submit — gerçek httpx dalları:
     D16 http 200 + passed verisi → ajan JSON yanıtı metriclere yansır (maliyet/gecikme)
     D17 http 200 + passed=false → sertifikasız, cert_id düşer
@@ -42,17 +42,19 @@ DAL HARİTASI (D1..D48):
   submit — job_id:
     D20 sabit zaman (time.time monkeypatch) → deterministik job-id
     D21 6-karakterden kısa agent_id → tüm kimlik sonek olur
-    D22 aynı saniye + aynı agent → AYNI job_id → jobs_db üzerine-yazma (BULGU B5)
+    D22 aynı saniye + aynı agent → sıra EKİ (-2, -3) ile AYRIK job_id'ler
+        (SERVER-API-B5 düzeltildi: jobs_db üzerine-yazma çakışması kapalı)
     D23 farklı agent → farklı job_id
   stream:
     D24 bilinmeyen job_id → 404 "Koşum bulunamadı."
     D25 tam SSE akış sırası (JOB_STARTED/TEE_ALLOCATED/20×TASK_EVALUATING/JOB_COMPLETED)
-    D26 TASK_EVALUATING kümesi T01..T20 + yüzde ilerleme (ilk 5%, son 100%)
-    D27 stream kendi TaskRegistry'sini kurar — koşucuya verilen 2-görevli
-        küme görmezden gelinir (BULGU B4)
+    D26 TASK_EVALUATING yüzde-ilerleme uçları (ilk %, son %100) + alanlar
+    D27 stream, koşucunun KAYIT-DEFTERİNİ yansıtır (2-görevli defter → 2 olay)
+        (SERVER-API-B4 düzeltildi; koşucuda defter ÖZELLİĞİ yoksa varsayılan
+        TaskRegistry yedeği çalışır — D27b)
     D28 red raporu → JOB_COMPLETED status=OVERFIT_REJECT, is_certified=false
-    D29 koşucu istisnası → job QUEUED kalır → rapor-yok varsayılanları
-        (status PASSED, is_certified true, boş merkle, düşen cert_id)
+    D29 koşucu istisnası → job FAILED yazılır; akış UYDURMA PASSED/true/
+        sahte-cert-id ÜRETMEZ (fail-closed: gerçek durum + boş kanıt alanları)
     D30 JOB_COMPLETED merkle-kökü + sertifika-kimliği rapordan yansır
   GET certificate:
     D31 bilinmeyen sertifika → 404
@@ -68,7 +70,8 @@ DAL HARİTASI (D1..D48):
     D38 iptal → is_valid false + CERTIFICATE_REVOKED
     D39 geçersiz imza → is_valid false
     D40 proofsuz VC → is_valid false
-    D41 eksik credentialSubject → 500 (BULGU B7: uçnokta VC yapısına duyarlı)
+    D41 eksik/bozuk YAPILI VC (credentialSubject.id / validUntil) → fail-closed
+        422 (SERVER-API-B7 düzeltildi: 500/KeyError çöktürmesi kapalı; D41b)
     D49 enjekte koşucu (kendi imzalayıcısıyla) → VC doğrulaması false
         (BULGU B9: imza runner'ın anahtarıyla, doğrulama uygulamanınkiyle)
   revoke:
@@ -76,33 +79,42 @@ DAL HARİTASI (D1..D48):
     D43 başarılı iptal → SUCCESS + is_revoked true
     D44 sebep saklanır (410'dan okunur)
     D45 iki-kez iptal → SUCCESS + sebep üstüne-yazar
-    D46 "/revoke/revoke" çift-yolu → str.replace tüm-geçiş davranışı (BULGU B6)
+    D46 "/revoke/revoke" çift-yolu → YALNIZ TEK son-ek soyulur (birebir-kimlik
+        önce denenir; SERVER-API-B6 düzeltildi: replace-all kaldırıldı; D46b:
+        ortasında "/revoke" geçen kimlik BİREBİR hedeflenir)
     D47 sebep yok → 422; boş sebep → 200 (sınır)
     D48 iptal sonrası GET → 410 + verify false (uçtan-uca akış)
 
-BULGULAR (testlerle belle):
-  B1  submit yanıt gövdesi "status":"PROCESSING" der ama koşum SENKRON'dur ve
-      jobs_db'de COMPLETED'dır — API sözleşmesi yanıltıcı (D15).
-  B2  create_app(..., credential_manager=...) kabul edilir ama hiçbir uçnoktada
-      kullanılmaz; doğrulama sınıf-metodu + uygulamanın kendi imzalayıcısıyla
-      yapılır — ölü parametre (D4).
-  B3  is_simulated_domain URL içinde ALTDİZGE eşleştirir — "https://evil.example/?x=acme.ai"
-      simüle sınıflanır, gerçek ajan HTTP çağrısı atlanır (güvenlik-açısı) (D11).
-  B4  stream_evaluation kendi TaskRegistry()'sini kurar — koşucuya verilen özel
-      kayıt-defteri görmezden gelinir, her zaman 20 görev akar (D27).
-  B5  job_id saniye-çözünürlüklüdür: aynı saniye + aynı agent → aynı job_id →
-      jobs_db kaydının üzerine yazılır (çarpışma) (D22).
-  B6  revoke_certificate cert_id.replace("/revoke", "") KULLANIR — son-ek değil
-      tüm geçişler soyulur (D46).
-  B7  GET /verify eksik/bozuk yapılı VC'lerde 500 verir — kırılgan uçnokta (D41).
-  B8  http_error_503 ile connection_error dış-gözlemle ayırt edilemez (ikisi de
-      "geçersiz koşum" sonucuna indirgenir) — hata sınıflandırması kaybolur (D18/D19).
-  B9  create_app(runner=...) ENJEKTE edilen koşucu kendi imzalayıcısıyla VC üretir,
-      ama GET /verify uygulamanın iç authority_signer public-key'ini kullanır —
-      imza-anahtar uyuşmazlığı: enjekte-runner sertifikaları her zaman false
-      doğrulanır. Sadece varsayılan yolda anahtarlar tutarlıdır (D37/D49).
+BULGULAR — DALGA-7-A DURUMU (üretime DOKUNULDU; testler YENİ doğru davranışı
+pinler — beklenti keyfî değil, üretim-değişikliklerinin kanıtlı karşılığıdır):
+  B1  (DÜZELTİLDİ) submit yanıt gövdesi yanıltıcı "PROCESSING" DEMEZ; koşum
+      istek içinde SENKRON bittiği için "status":"COMPLETED" (D14/D15).
+  B2  (DÜZELTİLDİ) enjekte edilen credential_manager GET /.../verify yolunda
+      KULLANILIR — doğrulama-kararı enjekte edilen yöneticinin (D4, D4b).
+  B3  (DÜZELTİLDİ) simülasyon dalı HOST-ADI eşleşmesidir (tam/alt-alan);
+      "https://evil.example/?x=acme.ai" artık simüle DEĞİL — sorgu-dizesiyle
+      simülasyon-bypass'ı kapandı, gerçek HTTP dalı denenir (D11, D11b).
+  B4  (DÜZELTİLDİ) stream, koşucunun kayıt-defterini yansıtır; yöneticide
+      defter özelliği yoksa varsayılan TaskRegistry'ye düşer (D26/D27/D27b).
+  B5  (DÜZELTİLDİ) job_id çakışması sıra-eki (-2, -3) ile giderilir — aynı
+      saniye + aynı agent ARTIK jobs_db kaydının üzerine yazmaz (D22).
+  B6  (DÜZELTİLDİ) revoke: önce BİREBİR kimlik denenir; yalnız :path yol
+      son-ekini yuttuysa TEK "/revoke" soyulur — replace-all yok (D46/D46b).
+  B7  (DÜZELTİLDİ) GET /verify eksik credentialSubject.id/validUntil'de 500
+      çökertmez — fail-closed 422 + yapı-yokluğu detayı (D41/D41b).
+  B8  (NET-HATA-DEĞİL): http_error_503 ile connection_error dış-gözlemde
+      aynı "başarısız koşum" sonucuna indirgenir — ama her ikisi de RED
+      üretir (fail-closed bozulmaz); sınıflandırma actions-listesinde durur.
+      Gözlemlilik iyileştirmesi, kapsam-dışı. (D18/D19 karakterizasyonu geçer.)
+  B9  (KAPSAM-DIŞI, FAIL-CLOSED): enjekte-koşucu anahtar uyuşmazlığı
+      is_valid=false VERİR — yanlış-kabul (fail-open) ÜRETMEZ, yalnız
+      yanlış-red; imza-doğrulamasının kök-nedene-indirgenmesi bu dalganın
+      konusu değil. (D37/D49 mevcut davranışı pinlemeye devam eder.)
 
-KURAL: SADECE YENİ DOSYA; production/conftest/mevcut-testlere DOKUNULMAZ.
+KURAL (güncel, DALGA-7-A): Bu dosya artık DÜZELTİLMİŞ üretimi pinler; önceki
+"üretime dokunulmaz" karakterizasyon-notu geçersizdir (üretim düzeltildi,
+kapsama SILINMEDİ — eski dallar yeni-doğru-dal olarak güncellendi + yenileri
+eklendi).
 Tüm koşumlar SAF-BELLEK'tir — ağ/RPC/subprocess/socket YOK; httpx monkeypatch
 ile izlenir, TestClient ASGI taşışması kullanır (gerçek socket açılmaz),
 VERIDROME_HOME ve çalışma-dizini tmp_path ile izole edilir.
@@ -366,8 +378,9 @@ class TestCreateApp:
         assert cagri["job_id"] == res.json()["job_id"]  # AT-188: job_id aşağı aktarılır
         assert callable(cagri["task_executor_fn"])
 
-    def test_verilen_credential_manager_kabul_edilir_ama_kullanilmaz(self):
-        # BULGU B2: parametre kabul edilir, hiçbir uçnokta cred_mgr'ye dokunmaz.
+    def test_verilen_credential_manager_dogrulamada_kullanilir(self):
+        # SERVER-API-B2 (DÜZELTİLDİ): enjekte edilen yönetici artık ÖLÜ
+        # parametre değil — GET /.../verify onu çağırır ve kararı kullanılır.
         cred_mgr = MagicMock(name="credential_manager-izci")
         stub = _KosucuStub(rapor=_rapor())
         app = create_app(runner=stub, credential_manager=cred_mgr)
@@ -375,9 +388,27 @@ class TestCreateApp:
         job_id = _gonder(client).json()["job_id"]
         cert_id = f"urn:veridrome:cert:{job_id}"
         assert client.get(f"/v1/certificates/{cert_id}").status_code == 200
-        assert client.get(f"/v1/certificates/{cert_id}/verify").status_code == 200
-        assert cred_mgr.call_count == 0
-        assert len(cred_mgr.method_calls) == 0
+        res = client.get(f"/v1/certificates/{cert_id}/verify")
+        assert res.status_code == 200
+        assert cred_mgr.verify_credential.call_count == 1
+        cagri = cred_mgr.verify_credential.call_args
+        assert cagri.args[0]["id"] == cert_id            # kök-deposundaki VC
+        assert isinstance(cagri.args[1], bytes)          # uygulamanın public-key'i
+        # yöneticinin dönüşü (MagicMock truthy → bool() True) yanıtı belirler
+        assert res.json()["is_valid"] is True
+
+    def test_credential_manager_karari_kesindir_false_donersi(self):
+        # B2 kanıtı-karşıt-dal: yönetici False dönerse uçnokta YİNE false
+        # bildirir — doğrulama sonucu yöneticinin-kararından-bağımsız üretilmez.
+        cred_mgr = MagicMock(name="credential_manager-izci")
+        cred_mgr.verify_credential.return_value = False
+        stub = _KosucuStub(rapor=_rapor())
+        client = TestClient(create_app(runner=stub, credential_manager=cred_mgr))
+        job_id = _gonder(client).json()["job_id"]
+        res = client.get(f"/v1/certificates/urn:veridrome:cert:{job_id}/verify")
+        assert res.status_code == 200
+        assert res.json()["is_valid"] is False
+        assert cred_mgr.verify_credential.call_count == 1
 
     def test_kosucu_verilmezse_gecerli_degerlendirme_kosar(self):
         # Varsayılan create_app() — gerçek koşucu + tam 20-görev kayıt-defteri.
@@ -458,13 +489,16 @@ class TestSubmitDogrulama:
 
 class TestSubmitSimule:
     @pytest.mark.parametrize("simule_url", [
-        "https://agent.acme.ai/v1/act",       # acme.ai altdizgesi
-        "https://sandbox.veridrome.internal/v1/act",  # internal altdizgesi
-        "https://evil.example/?x=acme.ai",    # B3: altdizge her-yerde geçerli
-        "https://host.mock/v1/act",           # mock altdizgesi
+        "https://agent.acme.ai/v1/act",       # .acme.ai alt-alanı
+        "https://acme.ai/v1/act",             # birebir host acme.ai
+        "https://sandbox.veridrome.internal/v1/act",  # .internal alt-alanı
+        "https://example.com/v1/act",         # birebir host example.com
+        "https://host.mock/v1/act",           # .mock alt-alanı
     ])
-    def test_simule_alan_httpx_cagrilmaz(self, simule_url, monkeypatch):
-        # BULGU B3: altdizge eşleşmesi URL'nin neresinde olursa olsun simüle sayar.
+    def test_simule_host_httpx_cagrilmaz(self, simule_url, monkeypatch):
+        # SERVER-API-B3 (DÜZELTİLDİ): simülasyon-yalnızca-host-adından
+        # (birebir veya ."domain" son-eki) kararlaştırılır — sorgu/path
+        # içindeki alan-adı artık simüle-saymaz.
         izci = _HttpxIzci()
         monkeypatch.setattr(httpx, "Client", izci)
         monkeypatch.setattr(time, "time", lambda: _SABIT_ZAMAN)
@@ -473,6 +507,36 @@ class TestSubmitSimule:
         assert res.status_code == 202
         assert izci.cagrilar == []  # gerçek HTTP dalı tetiklenmedi
         assert res.json()["job_id"] == f"job-{int(_SABIT_ZAMAN)}-98f12a"
+
+    @pytest.mark.parametrize("hileli_url", [
+        "https://evil.example/?x=acme.ai",    # B3'ün KANITI: sorguda acme.ai
+        "https://evil.com/x?q=internal",      # sorguda internal — simüle değil
+        "https://acme.ai.evil.co/v1/act",     # ters-son-ek tuzağı — simüle değil
+    ])
+    def test_altizge_hilesi_gercek_httpx_daline_duser(self, hileli_url, monkeypatch):
+        # B3 (DÜZELTİLDİ): eski-kod alt-dizge eşleşmesiyle bu URL'leri simüle
+        # sayıp uydurma-baseline-geçişi üretirdi; artık GERÇEK HTTP dalı
+        # denenir (bağlantı-yoksa fail-closed RED — baseline'a düşmez).
+        izci = _HttpxIzci()
+        monkeypatch.setattr(httpx, "Client", izci)
+        monkeypatch.setattr(time, "time", lambda: _SABIT_ZAMAN)
+        client = TestClient(create_app(runner=_hizli_kosucu()))
+        res = _gonder(client, endpoint_url=hileli_url)
+        assert res.status_code == 202
+        assert len(izci.cagrilar) == 4  # 2 görev × 2 koşum — dal baypas EDİLMEDİ
+        assert all(url == hileli_url for url, _ in izci.cagrilar)
+
+    def test_bozuk_url_baseline_kapali_gercek_deneme_yapilir(self, monkeypatch):
+        # B3 savunması: ayrıştırılamaz-ama-http-şemalı URL "gerçek-uçnokta"
+        # sayılır — uydurma-geçiş-üretmek yerine gerçek-çağrı-denemesi (D12'den
+        # farkı: http şeması VAR).
+        izci = _HttpxIzci(hata=RuntimeError("baglantı-yok"))
+        monkeypatch.setattr(httpx, "Client", izci)
+        monkeypatch.setattr(time, "time", lambda: _SABIT_ZAMAN)
+        client = TestClient(create_app(runner=_hizli_kosucu()))
+        res = _gonder(client, endpoint_url="https://")
+        assert res.status_code == 202
+        assert len(izci.cagrilar) == 4  # istisna executor'da yakalanıp RED olur
 
     @pytest.mark.parametrize("http_disi_url", [
         "ftp://runner.realai.io/act",  # http şeması ile başlamıyor
@@ -495,13 +559,18 @@ class TestSubmitSimule:
         govde = res.json()
         assert govde["estimated_duration_sec"] == 300  # sabit (BULGU: görev sayısından bağımsız)
         assert govde["tee_environment"] == "AMD-SEV-SNP"
-        assert govde["status"] == "PROCESSING"  # BULGU B1: aşağıda COMPLETED kanıtı
+        # SERVER-API-B1 (DÜZELTİLDİ): koşum bu-istekte SENKRON bitti →
+        # dürüst "COMPLETED"; yanıltıcı "PROCESSING" artık üretilmiyor.
+        assert govde["status"] == "COMPLETED"
 
-    def test_yanit_processing_derken_kosum_tamamlanmistir(self):
-        # BULGU B1: yanıt "PROCESSING" der ama submit SENKRON'dur — akışta
-        # hemen JOB_COMPLETED + sertifika görülür.
+    def test_yanit_completed_derken_kosum_tamamlanmistir(self):
+        # B1 kanıtı-tutarlılık: yanıt-durumu ile jobs_db/akış-gerçeği AYNI —
+        # "COMPLETED" diyen istekten hemen sonra akış JOB_COMPLETED üretir ve
+        # sertifika kök-deposunda durur.
         client = TestClient(create_app(runner=_hizli_kosucu()))
-        job_id = _gonder(client).json()["job_id"]
+        res = _gonder(client)
+        assert res.json()["status"] == "COMPLETED"
+        job_id = res.json()["job_id"]
         res = client.get(f"/v1/evaluations/{job_id}/stream")
         assert res.status_code == 200
         olaylar = _sse_olaylari(res.text)
@@ -598,18 +667,27 @@ class TestSubmitJobId:
         res = _gonder(client, agent_id="kisa")
         assert res.json()["job_id"] == f"job-{int(_SABIT_ZAMAN)}-kisa"
 
-    def test_ayni_saniye_ayni_agent_job_id_carpisir(self, monkeypatch):
-        # BULGU B5: saniye-çözünürlüklü job_id → aynı saniye + aynı agent
-        # AYNI job_id üretir; ikinci submit jobs_db'de birincinin üzerine yazar.
+    def test_ayni_saniye_ayni_agent_catismasi_giderilir(self, monkeypatch):
+        # SERVER-API-B5 (DÜZELTİLDİ): aynı saniye + aynı agent artık AYNI
+        # job_id ÜRETMİYOR — sıra-eki (-2, -3) ile ayrışır; ilk koşumun
+        # kaydı/sertifikası ikincinin üzerine YAZILMAZ.
         monkeypatch.setattr(time, "time", lambda: _SABIT_ZAMAN)
         client = TestClient(create_app(runner=_hizli_kosucu()))
         ilk = _gonder(client, agent_id="urn:agent:0x98f12a").json()
         ikinci = _gonder(client, agent_id="urn:agent:0x98f12a").json()
-        assert ilk["job_id"] == ikinci["job_id"]
-        # üzerine-yazma: akış yine tek job için çalışır
-        res = client.get(f"/v1/evaluations/{ikinci['job_id']}/stream")
-        assert res.status_code == 200
-        assert "JOB_COMPLETED" in res.text
+        ucuncu = _gonder(client, agent_id="urn:agent:0x98f12a").json()
+        temel = f"job-{int(_SABIT_ZAMAN)}-98f12a"
+        assert ilk["job_id"] == temel
+        assert ikinci["job_id"] == f"{temel}-2"
+        assert ucuncu["job_id"] == f"{temel}-3"
+        # ÜÇ-KAYIT-BİRLİKTE-yaşar: her birinin akışı ve sertifikası ayrı.
+        for jid in (ilk, ikinci, ucuncu):
+            res = client.get(f"/v1/evaluations/{jid['job_id']}/stream")
+            assert res.status_code == 200
+            assert "JOB_COMPLETED" in res.text
+            assert (client.get(
+                f"/v1/certificates/urn:veridrome:cert:{jid['job_id']}")
+                .status_code == 200)
 
     def test_farkli_agent_farkli_job_id(self, monkeypatch):
         monkeypatch.setattr(time, "time", lambda: _SABIT_ZAMAN)
@@ -649,30 +727,37 @@ class TestStream:
         assert tee["platform"] == "AMD-SEV-SNP"
         assert tee["pcr0"] == "0x98f12a4b8823901234567890abcdef"
 
-    def test_task_evaluating_kumesi_ve_ilerleme(self):
+    def test_task_evaluating_kumesi_kosucunun_kayit_defteri(self):
+        # SERVER-API-B4 (DÜZELTİLDİ): akış, koşucunun GERÇEK kayıt-defterini
+        # yansıtır — 2-görevli _hizli_kosucu defteri (ST01/ST02) akar,
+        # 20-uydurma görev değil. İlerleme-yüzdesi defter-Boyuna göre.
         client = TestClient(create_app(runner=_hizli_kosucu()))
         job_id = _gonder(client).json()["job_id"]
         olaylar = _sse_olaylari(client.get(f"/v1/evaluations/{job_id}/stream").text)
         gorev_olaylari = [o for o in olaylar if o["event"] == "TASK_EVALUATING"]
-        # BULGU B4'in kanıtı: stream kendi TaskRegistry'sini kullanır —
-        # koşucunun 2-görevli stub kümesi DEĞİL, her zaman T01..T20 akar.
+        assert [o["task_id"] for o in gorev_olaylari] == ["ST01", "ST02"]
+        assert gorev_olaylari[0]["progress"] == "50%"   # int(1/2*100)
+        assert gorev_olaylari[-1]["progress"] == "100%"
+        assert gorev_olaylari[0]["pool"] == "PUBLIC_CANARY"
+        assert gorev_olaylari[1]["pool"] == "DYNAMIC_HIDDEN"
+        assert all("title" in o for o in gorev_olaylari)
+
+    def test_registry_ozelligi_yoksa_varsayilan_taskregistry_yedegi(self):
+        # D27b yedek-dalı: yöneticinin `.registry` ÖZELLİĞİ yoksa (stub) akış
+        # varsayılan TaskRegistry'ye düşer — 20 görev (T01..T20) akar.
+        stub = _KosucuStub(rapor=_rapor(job_id="job-ozel-kutuk"))
+        assert not hasattr(stub, "registry")  # yedek-dal-koşulu
+        client = TestClient(create_app(runner=stub))
+        job_id = _gonder(client).json()["job_id"]
+        assert len(stub.cagrilar) == 1
+        olaylar = _sse_olaylari(client.get(f"/v1/evaluations/{job_id}/stream").text)
+        gorev_olaylari = [o for o in olaylar if o["event"] == "TASK_EVALUATING"]
         assert [o["task_id"] for o in gorev_olaylari] == [f"T{i:02d}" for i in range(1, 21)]
         assert gorev_olaylari[0]["progress"] == "5%"   # int(1/20*100)
         assert gorev_olaylari[-1]["progress"] == "100%"
         assert gorev_olaylari[0]["pool"] == "PUBLIC_CANARY"
         assert gorev_olaylari[1]["pool"] == "DYNAMIC_HIDDEN"
         assert all("title" in o for o in gorev_olaylari)
-
-    def test_stream_kendi_taskregistry_kurar(self):
-        # BULGU B4: 2-görevli kayıt-defteriyle koşan değerlendirme — akış
-        # yine 20 görev olayı üretir (enjekte edilen küme görmezden gelinir).
-        stub = _KosucuStub(rapor=_rapor(job_id="job-ozel-kutuk"))
-        client = TestClient(create_app(runner=stub))
-        job_id = _gonder(client).json()["job_id"]
-        assert len(stub.cagrilar) == 1
-        olaylar = _sse_olaylari(client.get(f"/v1/evaluations/{job_id}/stream").text)
-        gorev_olaylari = [o for o in olaylar if o["event"] == "TASK_EVALUATING"]
-        assert len(gorev_olaylari) == 20  # 2 değil!
 
     def test_red_raporu_job_completed_yansir(self):
         rapor = _rapor(job_id="job-red-1", verdict="OVERFIT_REJECT",
@@ -684,25 +769,27 @@ class TestStream:
         assert tamam["status"] == "OVERFIT_REJECT"
         assert tamam["is_certified"] is False
 
-    def test_kosucu_istisnasi_rapor_yok_varsayilanlari(self):
-        # Koşucu istisna fırlatır → submit 500 ama job QUEUED kalır; akış
-        # rapor-yok (None) varsayılanlarını kullanır: PASSED/true/boş merkle.
+    def test_kosucu_istisnasi_FAIL_EDER_uydurma_past_yok(self):
+        # D29 (DÜZELTİLDİ): koşucu istisna fırlatınca kayıt QUEUED'da kalmıyor
+        # — dürüstçe FAILED yazılır; akış rapor-yokken UYDURMA
+        # PASSED/is_certified=true/sahte-cert-id BİLDİRMEZ (fail-closed).
         stub = _KosucuStub(hata=RuntimeError("koşucu- patladı"))
         client = TestClient(create_app(runner=stub), raise_server_exceptions=False)
         res = _gonder(client)
-        assert res.status_code == 500
-        job_id = res.json().get("job_id") if res.headers.get("content-type", "").startswith("application/json") else None
-        # 500 gövdesi JSON olmayabilir; job_id'yi stub kaydından al
+        assert res.status_code == 500            # istisna yukarı bırakılır
         assert len(stub.cagrilar) == 1
         job_id = stub.cagrilar[0]["job_id"]
         res = client.get(f"/v1/evaluations/{job_id}/stream")
         assert res.status_code == 200
         olaylar = _sse_olaylari(res.text)
         tamam = [o for o in olaylar if o["event"] == "JOB_COMPLETED"][0]
-        assert tamam["status"] == "PASSED"      # report None → varsayılan
-        assert tamam["is_certified"] is True    # report None → varsayılan
-        assert tamam["merkle_root"] == ""       # report None → varsayılan
-        assert tamam["certificate_id"] == f"urn:veridrome:cert:{job_id}"
+        assert tamam["status"] == "FAILED"       # uydurma "PASSED" YOK
+        assert tamam["is_certified"] is False    # uydurma-true YOK
+        assert tamam["merkle_root"] == ""        # kanıt-yok → boş
+        assert tamam["certificate_id"] == ""     # var-olmayan-VC ima edilmez
+        # sertifika hiç üretilmemişti → kök-deposunda da YOK
+        assert client.get(
+            f"/v1/certificates/urn:veridrome:cert:{job_id}").status_code == 404
 
     def test_job_completed_merkle_koku_ve_cert_id_rapordan(self):
         kok = "0x" + "ab" * 32
@@ -835,9 +922,10 @@ class TestSertifikaDogrula:
         assert res.status_code == 200
         assert res.json()["is_valid"] is False  # 'proofValue' yok dalı
 
-    def test_eksik_credential_subject_500(self):
-        # BULGU B7: GET /verify, VC'de credentialSubject/validUntil yoksa
-        # beklenmedik KeyError → 500 (uçnokta VC yapısına duyarlı).
+    def test_eksik_credential_subject_422(self):
+        # SERVER-API-B7 (DÜZELTİLDİ): credentialSubject YOKKEN artık
+        # beklenmedik KeyError/500 ÇÖKTÜRMÜYOR — fail-closed 422: ne
+        # doğrulanmış-sayılır ne de sunucu çöker; yapı-yokluğu bildirilir.
         vc = _fake_vc(job_id="job-eksik-1")
         del vc["credentialSubject"]
         rapor = _rapor(job_id="job-eksik-1", vc=vc)
@@ -845,7 +933,33 @@ class TestSertifikaDogrula:
         client = TestClient(create_app(runner=stub), raise_server_exceptions=False)
         _gonder(client)
         res = client.get(f"/v1/certificates/urn:veridrome:cert:{stub.cagrilar[0]['job_id']}/verify")
-        assert res.status_code == 500
+        assert res.status_code == 422
+        assert "credentialSubject" in res.json()["detail"]
+
+    @pytest.mark.parametrize("mutasyon", [
+        "subject_dict_degil", "subject_id_yok",
+        "validUntil_yok", "validUntil_dize_degil",
+    ])
+    def test_yapi_eksikliginin_diger_dallari_422(self, mutasyon):
+        # B7'nin tamamı-yol-olan-hali: bozuk-VC-şekillerinin HER dalı 500
+        # çökertmesi DEĞİL, 422 yapı-hatası-dönüşü pinlenmiş (fail-closed).
+        vc = _fake_vc(job_id=f"job-yapi-{mutasyon}")
+        if mutasyon == "subject_dict_degil":
+            vc["credentialSubject"] = ["x"]
+        elif mutasyon == "subject_id_yok":
+            del vc["credentialSubject"]["id"]
+        elif mutasyon == "validUntil_yok":
+            del vc["validUntil"]
+        else:
+            vc["validUntil"] = 2099          # dize-olmayan tarih
+        rapor = _rapor(job_id=f"job-yapi-{mutasyon}", vc=vc)
+        stub = _KosucuStub(rapor=rapor)
+        client = TestClient(create_app(runner=stub), raise_server_exceptions=False)
+        _gonder(client)
+        res = client.get(
+            f"/v1/certificates/urn:veridrome:cert:{stub.cagrilar[0]['job_id']}/verify")
+        assert res.status_code == 422
+        assert res.json()["detail"]
 
 
 # ---------------------------------------------------------------------------
@@ -892,15 +1006,41 @@ class TestSertifikaIptal:
         govde = client.get(f"/v1/certificates/{cert_id}").json()
         assert govde["reason"] == "ikinci"  # üstüne-yazma
 
-    def test_cift_revoke_yolu_replace_all(self):
-        # BULGU B6: target = cert_id.replace("/revoke", "") — SON-EK değil
-        # TÜM geçişler soyulur. ".../revoke/revoke" → cert_id "<id>/revoke".
+    def test_cift_revoke_yolu_tek_son_ek_soyulur(self):
+        # SERVER-API-B6 (DÜZELTİLDİ): ".../revoke/revoke" → route-son-ekini
+        # yutan fazladan "/revoke" TEK olarak soyulur; replace-all YOK.
         vc = _fake_vc(job_id="job-cift-1")
         rapor = _rapor(job_id="job-cift-1", vc=vc)
         client, job_id, cert_id = _stub_gonder(rapor)
         res = client.post(f"/v1/certificates/{cert_id}/revoke/revoke", json={"reason": "çift"})
         assert res.status_code == 200
-        assert res.json()["cert_id"] == cert_id  # replace-all doğru hedefi buldu
+        assert res.json()["cert_id"] == cert_id  # doğru hedef, tek-soyma
+
+    def test_ortada_revoke_gecen_kimlik_birebir_hedeflenir(self):
+        # B6 kanıtı: kimliğinin ORTASINDA "/revoke" geçen sertifika — eski
+        # replace-all onu SOYUP yanlış/hayali hedefe yönlendirirdi (404);
+        # artık birebir-kimlik-önce-deneceği için DOĞRU kayıt iptal edilir.
+        vc_id = "urn:veridrome:cert:orta/revoke/kayit"
+
+        class _KimlikKoruyanStub(_KosucuStub):
+            def run_evaluation(self, **kwargs):   # id-hizalamasi YAPMA
+                self.cagrilar.append(kwargs)
+                return self.rapor
+
+        vc = _fake_vc(job_id="job-orta-1")
+        vc["id"] = vc_id
+        stub = _KimlikKoruyanStub(rapor=_rapor(job_id="job-orta-1", vc=vc))
+        client = TestClient(create_app(runner=stub))
+        govde = _gonder(client).json()
+        assert stub.cagrilar[0]["job_id"] == govde["job_id"]  # kimlik-hizalaması-bize-bırakıldı
+        assert client.get(f"/v1/certificates/{vc_id}").status_code == 200
+        res = client.post(f"/v1/certificates/{vc_id}/revoke", json={"reason": "ortada"})
+        assert res.status_code == 200
+        assert res.json()["cert_id"] == vc_id    # BİREBİR kimlik, soyulmamış
+        assert client.get(f"/v1/certificates/{vc_id}").status_code == 410
+        # replace-all'ün-üreteeceği-YANLIŞ hedef asla var olmadı/vurulmadı
+        assert client.get(
+            "/v1/certificates/urn:veridrome:cert:orta/kayit").status_code == 404
 
     def test_iptal_sebep_yoksa_422_bos_sebep_200(self):
         vc = _fake_vc(job_id="job-sebep-sinir")

@@ -71,7 +71,10 @@ KULLANIM:
     assert rapor["valid"]
 
 GÜVENLİK-MODELİ: ``verify`` kötü-veride asla hata fırlatmaz —
-``{valid, errors, summary}`` döner. Tüm zincir genesisten yeniden-doğrulanır:
+``{valid, errors, summary}`` döner. Bu sözleşme YAPISAL olarak da korunur
+( ANCANK-B1): non-dict ``sidecar``/alanlar, yol-olmayan ``ledger`` ve
+canonicalize-edilemeyen bir bağ hata fırlatmaz; fail-closed RED gerekçesine
+dönüşür. Tüm zincir genesisten yeniden-doğrulanır:
 kurcalanmış bir ledger satırı, değiştirilmiş bir seq veya sahte bir ``h``
 hepsi fail-closed RED olur. "Hiçbir-kanıt INCONCLUSIVE-değil" felsefesi:
 zayıf-kanıt > kanıt-yok, dürüst-etiketlenmiş.
@@ -179,8 +182,10 @@ def _encode(o: Any, out: List[str]) -> None:
         out.append("true")
     elif o is False:
         out.append("false")
-    elif isinstance(o, bool):        # savunma: bool, int'ın alt-sınıfıdır
-        out.append("true" if o else "false")
+    # ANCANK-B4 (DUZELTILDI): burada-eskiden-bir ``isinstance(o, bool)`` savunma-
+    # dalı-vardı; bool-alt-sınıflanamadığı (TypeError) ve-her-bool-örneği-True/
+    # False-tekilleri-olduğu-için-ölü-koddur — kaldırıldı (bool-artık-yukarıdaki
+    # identity-dallarıyla-tam-kapsanır).
     elif isinstance(o, int):
         if not (-_SAFE_INT_LIMIT <= o <= _SAFE_INT_LIMIT):
             raise ValueError(
@@ -252,15 +257,25 @@ def bound_fields(cert: Dict[str, Any]) -> Dict[str, Any]:
       - ``issuer``        : did:key — kim imzaladı ( self-resolving)
       - ``commit``        : testlerin koştuğu commit ( fail-closed-zorunlusu)
 
-    Bu alanlar gövdeden ZORUNLU olarak çıkarılır; eksikleri RED olur —
-    "bağlamı-olmayan-çapa" üretmeyiz ( core.py'nin fail-closed felsefesi).
+    Bu alanlar gövdeden ZORUNLU olarak çıkarılır; eksikleri VEYA substance'ı
+    olmayan ( boş/yalnız-boşluk dize, sıfır/negatif yaprak-sayısı) değerleri
+    RED olur — "bağlamı-olmayan-çapa" üretmeyiz ( core.py'nin fail-closed
+    felsefesi; ANCANK-B3).
+
+    Zorunlu-alan denetimi artık ``is None`` DEĞİL "kanıt-taşıyor mu"dur:
+    ``cert_id=""``, ``commit=""``, ``leaf_count=0`` gibi falsy-ama-None-olmayan
+    değerler substance'sızdır → RED ( fail-closed). ``leaf_count`` ayrıca
+    ``core.verify_certificate`` ile aynı kurala uyar: pozitif ``int`` olmalı
+    ( ``"5"`` veya ``2.0`` gibi değerler yeniden-doğrulanamaz).
     """
     if not isinstance(cert, dict):
         raise ValueError("sertifika bir JSON nesnesi değil")
     subject = cert.get("credentialSubject")
     if not isinstance(subject, dict):
         raise ValueError("credentialSubject eksik — bu bir Veridrome sertifikası değil")
-    repo = subject.get("repo") or {}
+    repo = subject.get("repo")
+    if not isinstance(repo, dict):
+        repo = {}
     bound = {
         "cert_id": cert.get("cert_id"),
         "content_hash": cert.get("content_hash"),
@@ -269,11 +284,19 @@ def bound_fields(cert: Dict[str, Any]) -> Dict[str, Any]:
         "issuer": cert.get("issuer"),
         "commit": repo.get("commit"),
     }
-    missing = [k for k, v in bound.items() if v is None]
+    missing: List[str] = []
+    for alan, deger in bound.items():
+        if deger is None or (isinstance(deger, str) and not deger.strip()):
+            missing.append(alan)          # yok VEYA boş-dize → substance yok
+        elif alan == "leaf_count" and (
+                isinstance(deger, bool) or not isinstance(deger, int)
+                or deger < 1):
+            missing.append(alan)          # 0/negatif/tamsayı-değil → kanıt yok
     if missing:
         raise ValueError(
             f"sertifikada anchor-bağı için gerekli alanlar eksik: {missing} "
-            f"— bağlamı-olmayan-çapa-üretilmez ( fail-closed)"
+            f"( eksik-veya-boş-değer) — bağlamı-olmayan-çapa-üretilmez "
+            f"( fail-closed)"
         )
     return bound
 
@@ -506,25 +529,51 @@ def verify(sidecar: Dict[str, Any],
     """Bir anchor sidecar'ı, adını verdiği ledger dosyasına karşı doğrula.
 
     Kötü-veride asla hata fırlatmaz — ``{valid, errors, summary}`` döner.
-    Ledger yeniden-okunur ve TÜM zincir genesisten yeniden-doğrulanır:
-    kurcalanmış bir ledger satırı, değiştirilmiş bir seq veya sahte bir ``h``
-    hepsi fail-closed RED olur.
+    Bu sözleşme YAPISAL olarak da geçerlidir ( ANCANK-B1): non-dict
+    ``sidecar``, non-dict ``tamga``/``bound`` alanı veya dize-olmayan
+    ``ledger``/``digest`` değerleri de hata fırlatmaz; ilgili alan
+    fail-closed RED gerekçesi olur. Ledger yeniden-okunur ve TÜM zincir
+    genesisten yeniden-doğrulanır: kurcalanmış bir ledger satırı,
+    değiştirilmiş bir seq veya sahte bir ``h`` hepsi fail-closed RED olur.
     """
     errors: List[str] = []
-    if not isinstance(sidecar, dict) \
-            or sidecar.get("anchor_version") != TAMGA_ANCHOR_VERSION:
+    if not isinstance(sidecar, dict):
+        # ANCANK-B1 (DUZELTILDI): eski-kod-bu-dalda-hata-bloğunun-f-string'i
+        # içinde-``sidecar.get(...)`` çağırıyordu → non-dict-veride
+        # AttributeError ( "kötü-veride-asla-hata-fırlatmaz"-sözleşmesi-ihlali).
         return {
             "valid": False,
             "errors": [
-                f"bu bir tamga anchor sidecar'ı değil "
+                "bu bir tamga anchor sidecar'ı değil "
+                f"(sidecar bir JSON nesnesi değil: {type(sidecar).__name__})"
+            ],
+            "summary": {},
+        }
+    if sidecar.get("anchor_version") != TAMGA_ANCHOR_VERSION:
+        return {
+            "valid": False,
+            "errors": [
+                "bu bir tamga anchor sidecar'ı değil "
                 f"(anchor_version={sidecar.get('anchor_version')!r})"
             ],
             "summary": {},
         }
 
-    t = sidecar.get("tamga") or {}
-    bound = sidecar.get("bound") or {}
-    digest = sidecar.get("digest", "")
+    # ANCANK-B1 (DUZELTILDI): ``t.get``/``bound.get`` çağrıları-YALNIZ-dict-
+    # üzerinde-yapılır; yanlış-tip-fail-closed-gerekçeye-dönüşür.
+    t = sidecar.get("tamga")
+    if not isinstance(t, dict):
+        errors.append("sidecar 'tamga' alanı bir JSON nesnesi değil")
+        t = {}
+    bound = sidecar.get("bound")
+    if not isinstance(bound, dict):
+        errors.append("sidecar 'bound' alanı bir JSON nesnesi değil")
+        bound = {}
+    digest = sidecar.get("digest")
+    if not isinstance(digest, str):
+        if digest is not None:
+            errors.append("sidecar 'digest' alanı bir dize değil")
+        digest = ""
 
     if cert is not None:
         # sidecar, eldeki sertifikadan bağımsız olarak yeniden-hesaplanan
@@ -544,6 +593,11 @@ def verify(sidecar: Dict[str, Any],
             errors.append("anchor digest, bağdan yeniden-hesaplanmıyor")
 
     ledger_path = t.get("ledger")
+    if ledger_path is not None and not isinstance(ledger_path, str):
+        # ANCANK-B1: tamsayı-bir-"yol" ( örn. 42) ``open()``'a-dosya-tanıtıcısı
+        # olarak-giderdi — yol-değil, fail-closed-RED.
+        errors.append("sidecar 'ledger' alanı bir dosya-yolu dizesi değil")
+        ledger_path = None
     seq = t.get("seq")
     if not ledger_path:
         return {"valid": False,
@@ -579,6 +633,18 @@ def verify(sidecar: Dict[str, Any],
     if rec.get("digest") != digest:
         errors.append("ledger kaydının digest'ı sidecar ile uyuşmuyor")
 
+    # ANCANK-B1: digest-yeniden-hesabı-da-savunmalı — sidecar'daki-bağ
+    # JCS-ile-serileştirilemeyen-bir-değer-taşıyorsa ( örn. set/nesne)
+    # ``anchor_digest`` TypeError-fırlatırdı; bu-da-sözleşme-ihlali-olurdu.
+    try:
+        ozet_digest = anchor_digest(bound) if bound else digest
+    except Exception:
+        errors.append(
+            "anchor-bağı kanonik olarak serileştirilemedi — digest "
+            "yeniden-hesaplanamıyor"
+        )
+        ozet_digest = digest
+
     summary = {
         "cert_id": bound.get("cert_id"),
         "content_hash": bound.get("content_hash"),
@@ -586,7 +652,7 @@ def verify(sidecar: Dict[str, Any],
         "leaf_count": bound.get("leaf_count"),
         "issuer": bound.get("issuer"),
         "commit": bound.get("commit"),
-        "digest": anchor_digest(bound) if bound else digest,
+        "digest": ozet_digest,
         "ledger": ledger_path,
         "seq": seq,
         "h": rec.get("h"),

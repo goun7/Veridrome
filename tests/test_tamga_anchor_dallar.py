@@ -15,22 +15,27 @@ Modül anatomisi ( 612 satır): RFC 8785 (JCS) stdlib-only gömülü canonicaliz
 pub/sub apisi ( ``publish``/``verify``). ``__all__``'deki 14 ismin TAMAMI
 ( artı çekirdek özel-fonksiyon ``_append_record``) aşağıda test edilir.
 
-Belgelenen bulgular ( üretime DOKUNULMADI — Kural-1; gerçek burada belgelendi):
-  * BULGU-B1: ``verify`` non-dict ``sidecar``'da ( None/str/list/int) veya
-    non-dict ``tamga`` alanında ``AttributeError`` FIRLATIR. Docstring'in
-    "kötü-veride asla hata fırlatmaz" sözleşmesini ihlal eder — hata-bloğu
-    f-string'i güçsüz-nesne üzerinde ``.get`` çağırır. ( ``TestVerifySozlesmeGaci``)
-  * BULGU-B2: ``read_ledger``'in UTF-8 decode'u ``for line in f`` yinelemesindedir
-    ( try bloğunun DIŞINDA) → 1 MiB altında geçersiz-UTF-8 bayt içeren ledger
-    ``UnicodeDecodeError`` fırlatır; ``verify`` yalnız ``OSError`` yakaladığı
-    için bu SIZAR. Yine "asla hata fırlatmaz" ihlali. ( ``TestVerifySozlesmeGaci``)
-  * BULGU-B3: ``bound_fields`` zorunlu-alan denetimini ``is None`` ile yapar —
-    falsy-ama-None-olmayan değerler ( ``""``, ``0``) GEÇER; substance'ı
-    olmayan "boş bağ" üretilir. ( ``TestBoundFieldsGecisBoslugu``)
-  * BULGU-B4: ``_encode``'in savunma dalı ``isinstance(o, bool)`` ölü-koddur —
-    ``bool`` alt-sınıflanamaz, ``True``/``False`` zaten ``is`` ile yakalanır.
-  * BULGU-B5: ``verify_chain`` ``node_sig`` denetimini yalnızca anahtar VARSA
-    yapar — ``node_id`` içeren ama ``node_sig`` içermeyen kayıt yeşil geçer.
+Belgelenen bulgular — DALGA-7-A'da bunların ÜRETİM kodu düzeltildi ve
+aşağıdaki testler YENİ doğru davranışı pinler:
+  * ANCANK-B1 (DÜZELTİLDİ): ``verify`` non-dict ``sidecar`` ( None/str/list/int)
+    veya non-dict ``tamga`` alanında ``AttributeError`` FIRLATIYORDU ( hata-bloğu
+    f-string'i güçsüz-nesne üzerinde ``.get`` çağırıyordu). Artık yapısal-olarak
+    fail-closed'dur: ``{valid: False, errors: [...], summary: {}}`` döner;
+    non-dict ``bound``/dize-olmayan ``digest``/yol-olmayan ``ledger`` ve
+    canonicalize-edilemeyen bağ da hata fırlatmaz ( ``TestVerifySozlesmeGaci``).
+  * ANCANK-B2 (DÜZELTİLDİ): ``read_ledger`` ikili-modda okur ve her satırı
+    kendi try bloğunda çözer — geçersiz-UTF-8 bayt sentinel'e düşer,
+    ``UnicodeDecodeError`` sızmaz. ( ``TestVerifySozlesmeGaci``)
+  * ANCANK-B3 (DÜZELTİLDİ): ``bound_fields`` artık ``is None`` ile değil
+    "kanıt-taşıyor mu" ile denetler — boş/yalnız-boşluk dize ve sıfır/negatif/
+    tamsayı-olmayan yaprak-sayısı RED'dir; substance'sız "boş bağ" üretilmez.
+    ( ``TestBoundFieldsGecisBoslugu``)
+  * ANCANK-B4 (DÜZELTİLDİ): ``_encode``'in savunma dalı ``isinstance(o, bool)``
+    ölü-koddur ( ``bool`` alt-sınıflanamaz, ``True``/``False`` zaten ``is`` ile
+    yakalanır) → kaldırıldı ( ``TestJcs``).
+  * BULGU-B5 (AÇIK — DALGA-7-A kapsamı dışı): ``verify_chain`` ``node_sig``
+    denetimini yalnızca anahtar VARSA yapar — ``node_id`` içeren ama
+    ``node_sig`` içermeyen kayıt yeşil geçer.
 """
 
 from __future__ import annotations
@@ -570,39 +575,47 @@ class TestBoundFields:
 
 
 class TestBoundFieldsGecisBoslugu:
-    """BULGU-B3 — ``bound_fields`` zorunlu-alan denetimini ``is None`` ile yapar;
-    falsy-ama-None-olmayan değerler ( ``""``, ``0``) GEÇER. "Bağlamı-olmayan-çapa"
-    üretimini engellemeyen bir geçiş-boşluğu — üretime DOKUNULMADI ( Kural-1),
-    gerçek burada belgelendi. Aşağıdaki testler MEVCUT davranışı belgeler.
+    """ANCANK-B3 (DÜZELTİLDİ) — ``bound_fields`` zorunlu-alan denetimi artık
+    ``is None`` DEĞİL "kanıt-taşıyor mu"dur: boş/yalnız-boşluk dize ve
+    sıfır/negatif/tamsayı-olmayan yaprak-sayısı RED'dir. Substance'sız bir
+    "boş bağ" üretilemez ( fail-closed).
 
-    Dallar:
-      D1: commit="" ( boş commit) → GEÇER ( bağlam yok ama çapa var)
-      D2: leaf_count=0 → GEÇER
-      D3: tüm alanlar "" / 0 → tamamen-boş bağ GEÇER
+    Dallar ( YENİ doğru davranış):
+      D1: commit="" ( boş commit) → ValueError ( substance yok)
+      D2: leaf_count=0 → ValueError ( yaprak-kanıtı yok)
+      D3: tüm alanlar "" / 0 → tamamen-boş bağ RED
       D4: None değerler → RED ( denetimin çalıştığı dal — karşıtlık)
+      D5: yalnız-boşluk commit ( "   ") → RED ( strip-denetimi)
+      D6: leaf_count dize ( "5") → RED ( core ile aynı: pozitif int şart)
+      D7: tam-dolu sertifika → GEÇER ( pozitif-kontrol; denetim fazla-sıkı değil)
     """
 
-    def test_bos_commit_gecer(self):
+    def test_bos_commit_red(self):
         # D1
-        assert bound_fields(_cert(commit=""))["commit"] == ""
+        with pytest.raises(ValueError, match="gerekli alanlar eksik:") as exc:
+            bound_fields(_cert(commit=""))
+        assert "commit" in str(exc.value)
 
-    def test_sifir_leaf_count_gecer(self):
+    def test_sifir_leaf_count_red(self):
         # D2
-        assert bound_fields(_cert(leaf_count=0))["leaf_count"] == 0
+        with pytest.raises(ValueError, match="gerekli alanlar eksik:") as exc:
+            bound_fields(_cert(leaf_count=0))
+        assert "leaf_count" in str(exc.value)
 
-    def test_tamami_bos_bag_gecer(self):
-        # D3 — hiçbir substance'ı olmayan bağ üretilir
+    def test_tamami_bos_bag_red(self):
+        # D3 — hiçbir substance'ı olmayan bağ ÜRETİLMEZ ( fail-closed).
         cert = _cert(cert_id="", content_hash="", issuer="",
                      merkle_root="", leaf_count=0, commit="")
-        assert bound_fields(cert) == {
-            "cert_id": "", "content_hash": "", "merkle_root": "",
-            "leaf_count": 0, "issuer": "", "commit": "",
-        }
+        with pytest.raises(ValueError, match="gerekli alanlar eksik:") as exc:
+            bound_fields(cert)
+        for alan in ("cert_id", "content_hash", "merkle_root", "leaf_count",
+                     "issuer", "commit"):
+            assert alan in str(exc.value)
 
     @pytest.mark.parametrize("alan", ["cert_id", "content_hash", "issuer",
                                       "merkle_root", "leaf_count", "commit"])
     def test_none_deger_red(self, alan):
-        # D4 — None denetimi çalışır ( falsy-geçiş-boşluğunun tersi).
+        # D4 — None denetimi çalışır.
         # Konum-eşlemesi: bağ alanı → sertifika içindeki yeri.
         cert = _cert()
         if alan in ("merkle_root", "leaf_count"):
@@ -614,6 +627,24 @@ class TestBoundFieldsGecisBoslugu:
             cert[alan] = None
         with pytest.raises(ValueError, match="gerekli alanlar eksik"):
             bound_fields(cert)
+
+    def test_yalniz_bosluk_dize_red(self):
+        # D5 — "   " substance taşımaz ( strip-denetimi)
+        with pytest.raises(ValueError, match="gerekli alanlar eksik:") as exc:
+            bound_fields(_cert(commit="   ", issuer="\t"))
+        assert "commit" in str(exc.value) and "issuer" in str(exc.value)
+
+    def test_leaf_count_dize_red(self):
+        # D6 — "5" yeniden-doğrulanabilir bir kanıt değil ( core pozitif int ister)
+        with pytest.raises(ValueError, match="gerekli alanlar eksik:") as exc:
+            bound_fields(_cert(leaf_count="5"))
+        assert "leaf_count" in str(exc.value)
+        with pytest.raises(ValueError, match="gerekli alanlar eksik:"):
+            bound_fields(_cert(leaf_count=-3))
+
+    def test_tam_dolu_sertifika_gecer(self):
+        # D7 — pozitif-kontrol: gerçek-sertifika-şekli hâlâ GEÇER
+        assert bound_fields(_cert())["commit"] == "COMMIT1"
 
 
 class TestAnchorDigest:
@@ -1523,39 +1554,78 @@ class TestVerify:
 
 
 class TestVerifySozlesmeGaci:
-    """BULGU-B1 + B2 — ``verify``'in "kötü-veride ASLA hata fırlatmaz" sözleşmesi
-    İHLAL EDİLİR. Üretim koduna DOKUNULMADI ( Kural-1); bu testler MEVCUT
-    davranışı ( karakterizasyon-testi) belgeler ve raporda açıklanır.
+    """ANCANK-B1 + B2 (DÜZELTİLDİ) — ``verify``'in "kötü-veride ASLA hata
+    fırlatmaz" sözleşmesi artık YAPISAL olarak da tutulur: non-dict
+    ``sidecar``/``tamga``/``bound``, yol-olmayan ``ledger``, dize-olmayan
+    ``digest`` ve canonicalize-edilemeyen bağ hata fırlatmaz; her biri
+    fail-closed RED gerekçesine dönüşür.
 
-    BULGU-B1: non-dict ``sidecar`` ( None/str/list/int) veya non-dict ``tamga``
-      alanı → hata-bloğunun f-string'i güçsüz-nesne üzerinde ``.get`` çağırır →
-      ``AttributeError``. ("kötü-veride asla hata fırlatmaz" ihlali.)
-    BULGU-B2: ``read_ledger``'in UTF-8 decode'u ``for line in f`` içindedir
-      ( try'ın DIŞINDA) → geçersiz-UTF-8 ledger ``UnicodeDecodeError`` fırlatır;
-      ``verify`` yalnızca ``OSError`` yakaladığı için bu SIZAR.
+    ANCANK-B1: eskiden non-dict ``sidecar`` ( None/str/list/int) veya non-dict
+      ``tamga`` alanı hata-bloğunun f-string'inde ``.get`` çağırıp
+      ``AttributeError`` fırlatıyordu.
+    ANCANK-B2: eskiden ``read_ledger``'in UTF-8 decode'u ``for line in f``
+      içinde ( try'ın DIŞINDA) olduğu için geçersiz-UTF-8 ledger
+      ``UnicodeDecodeError`` fırlatıyordu; ``verify`` yalnızca ``OSError``
+      yakaladığından bu SIZIYORDU.
 
     Dallar:
-      D1: sidecar None → AttributeError ( B1)
-      D2: sidecar str → AttributeError ( B1)
-      D3: sidecar list → AttributeError ( B1)
-      D4: sidecar int → AttributeError ( B1)
-      D5: tamga non-dict ( str) → AttributeError ( B1)
-      D6: geçersiz-UTF-8 ledger → UnicodeDecodeError ( B2)
+      D1: sidecar None/str/list/int → fail-closed sözlük ( B1)
+      D2: tamga non-dict ( str) → fail-closed sözlük ( B1)
+      D3: bound non-dict ( list) → fail-closed sözlük ( B1)
+      D4: digest dize-değil ( 42) → fail-closed sözlük ( B1)
+      D5: ledger yol-değil ( 42) → fail-closed ( open-fd-kaza-yolu-kapalı)
+      D6: geçersiz-UTF-8 ledger → UnicodeDecodeError DEĞİL, zincir-reddi ( B2)
+      D7: canonicalize-edilemeyen bağ ( set) → TypeError DEĞİL, RED ( B1)
     """
 
     @pytest.mark.parametrize("kotu", [None, "str", ["x"], 42],
                              ids=["None", "str", "list", "int"])
-    def test_non_dict_sidecar_attribute_error(self, kotu):
-        # D1-D4 — MEVCUT davranış: AttributeError ( docstring ihlali)
-        with pytest.raises(AttributeError):
-            verify(kotu)
+    def test_non_dict_sidecar_fail_closed(self, kotu):
+        # D1 — YENİ davranış: istisna YOK, yapısal fail-closed sonuç var
+        rapor = verify(kotu)
+        assert rapor["valid"] is False
+        assert isinstance(rapor["errors"], list) and rapor["errors"]
+        assert "bu bir tamga anchor sidecar'ı değil" in rapor["errors"][0]
+        assert rapor["summary"] == {}
 
-    def test_non_dict_tamga_attribute_error(self):
-        # D5 — anchor_version doğru ama tamga=str → t.get → AttributeError
+    def test_non_dict_tamga_fail_closed(self):
+        # D2
         sc = {"anchor_version": TAMGA_ANCHOR_VERSION,
               "tamga": "str-degil-dict", "bound": {}, "digest": ""}
-        with pytest.raises(AttributeError):
-            verify(sc)
+        rapor = verify(sc)
+        assert rapor["valid"] is False
+        assert any("'tamga' alanı bir JSON nesnesi değil" in e
+                   for e in rapor["errors"])
+        assert any("bir ledger belirtmiyor" in e for e in rapor["errors"])
+
+    def test_non_dict_bound_fail_closed(self):
+        # D3 — eski-kod-bu-durumda-summary-üretirken-``bound.get``'e-düşerdi
+        sc = {"anchor_version": TAMGA_ANCHOR_VERSION,
+              "tamga": {"ledger": "yok.jsonl", "seq": 1, "h": "aa"},
+              "bound": ["x"], "digest": ""}
+        rapor = verify(sc)
+        assert rapor["valid"] is False
+        assert any("'bound' alanı bir JSON nesnesi değil" in e
+                   for e in rapor["errors"])
+        assert rapor["summary"] == {}
+
+    def test_dize_olmayan_digest_fail_closed(self):
+        # D4
+        sc = {"anchor_version": TAMGA_ANCHOR_VERSION,
+              "tamga": "x", "bound": {}, "digest": 42}
+        rapor = verify(sc)
+        assert rapor["valid"] is False
+        assert any("'digest' alanı bir dize değil" in e for e in rapor["errors"])
+
+    def test_yol_olmayan_ledger_fail_closed(self):
+        # D5 — tamsayı-"yol"-``open()``'a-dosya-tanıtıcısı-olarak-giderdi
+        sc = {"anchor_version": TAMGA_ANCHOR_VERSION,
+              "tamga": {"ledger": 42, "seq": 1, "h": "aa"},
+              "bound": {}, "digest": ""}
+        rapor = verify(sc)
+        assert rapor["valid"] is False
+        assert any("'ledger' alanı bir dosya-yolu dizesi değil" in e
+                   for e in rapor["errors"])
 
     def test_gecersiz_utf8_ledger_reddeder_ancank_b2(self, tmp_path):
         # D6 — ANCANK-B2 (DUZELTILDI): gecersiz-UTF-8-ledger-artik-
@@ -1567,6 +1637,21 @@ class TestVerifySozlesmeGaci:
               "bound": {"cert_id": "c"}, "digest": ""}
         sonuc = verify(sc)
         assert sonuc["valid"] is False and sonuc["errors"]
+
+    def test_serilestirilemeyen_bag_hata_firlatmaz(self, tmp_path):
+        # D7 — bağ-JCS-ile-serileştirilemiyorsa ( set) digest-yeniden-hesabı
+        # TypeError-fırlatmamalı; RED-gerekçesi-üretilmeli ( B1-kontratı).
+        p = str(tmp_path / "ok.jsonl")
+        sc_gecerli = publish(_cert(), p)
+        kotu = {"anchor_version": TAMGA_ANCHOR_VERSION,
+                "tamga": dict(sc_gecerli["tamga"]),
+                "bound": {"cert_id": {1, 2}},   # set → JCS-desteklemez
+                "digest": ""}
+        rapor = verify(kotu)
+        assert rapor["valid"] is False
+        assert any("kanonik olarak serileştirilemedi" in e
+                   for e in rapor["errors"])
+        assert rapor["summary"]["digest"] == ""
 
 
 # ===========================================================================

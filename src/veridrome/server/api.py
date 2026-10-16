@@ -8,6 +8,7 @@ import asyncio
 import json
 import time
 from typing import Any, Dict, Optional
+from urllib.parse import urlsplit
 from fastapi import FastAPI, HTTPException, status
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
@@ -17,6 +18,34 @@ from veridrome.credentials.w3c_vc import VeridromeCredentialManager
 from veridrome.runner import EvaluationReport, EvaluationRunner
 from veridrome.server.dashboard_html import DASHBOARD_HTML
 from veridrome.tasks.registry import TaskRegistry
+
+# SERVER-API-B3 (DUZELTILDI): simülasyon-alanı denetimi ALTDİZGE-eşleşmesi
+# DEĞİL, URL'nin barındırıcı-adı ( host) üzerinden yapılır. Eski-kod
+# ``"acme.ai" in url`` ile "https://evil.example/?x=acme.ai"-yi de simüle
+# sayıyordu → gerçek-ajan-HTTP-çağrısı atlanıp-uydurma-baseline-geçişi
+# üretilebiliyordu ( sorgu-dizesiyle-simülasyon-bypass'ı).
+SIMULE_HOSTLAR = ("acme.ai", "internal", "example.com", "mock")
+
+
+def _hedef_siniflandir(url: str) -> tuple[bool, bool]:
+    """``endpoint_url``'i ``(http_semali, simule_host)`` olarak sınıflandırır.
+
+    ``simule_host`` yalnızca host-adı tam-eşleşme veya ``.<domain>`` son-eki
+    ise True'dur ( alt-alan-adları-dahil: agent.acme.ai, host.mock). Ayrıştırılamayan
+    URL "gerçek-uçnokta" sayılır: baseline'a-düşüp-sahte-geçiş-üretmek yerine
+    gerçek-çağrı-denemesi-yapılır ( bağlantı-hatası → fail-closed).
+    """
+    if not isinstance(url, str) or not url:
+        return False, False
+    try:
+        parsed = urlsplit(url)
+        host = (parsed.hostname or "").lower()
+    except ValueError:
+        return True, False
+    if parsed.scheme not in ("http", "https"):
+        return False, False
+    simule = any(host == dom or host.endswith("." + dom) for dom in SIMULE_HOSTLAR)
+    return True, simule
 
 
 class RuntimeManifest(BaseModel):
@@ -65,7 +94,16 @@ def create_app(
         # AT-188: job_id-BURADA-tek-seferde-belirlenir-ve-aşağıya-aktarılır.
         # Sertifika-üretimi-tamamen-SENKRON-dur: bu-fonksiyon-dönmeden-önce
         # certificates_db'ye-yazılmıştır. Arka-plan-thread'i/yarış-koşulu-yok.
-        job_id = f"job-{int(time.time())}-{req.agent_id[-6:]}"
+        temel_job_id = f"job-{int(time.time())}-{req.agent_id[-6:]}"
+        # SERVER-API-B5 (DUZELTILDI): job-id-saniye-çözünürlüklüdür — aynı
+        # saniyede-aynı-ajan-ikinci-kez-gönderirse-eski-kod-AYNI-kimliği
+        # üretip-jobs_db-kaydını-üzerine-yazıyordu ( önceki-rapor+sertifika
+        # kayboluyordu). Çakışmada-artan-bir-sıra-eki-kullanılır.
+        job_id = temel_job_id
+        sira = 2
+        while job_id in jobs_db:
+            job_id = f"{temel_job_id}-{sira}"
+            sira += 1
         jobs_db[job_id] = {
             "status": "QUEUED",
             "agent_id": req.agent_id,
@@ -76,10 +114,11 @@ def create_app(
         # Gerçek HTTP Ajan Yürütücüsü veya Referans Baseline
         import httpx
 
-        is_simulated_domain = any(dom in req.endpoint_url for dom in ("acme.ai", "internal", "example.com", "mock"))
+        # SERVER-API-B3 (DUZELTILDI): host-adı-temelli-sınıflandırma.
+        http_semali, simule_host = _hedef_siniflandir(req.endpoint_url)
 
         def agent_executor(task, run_idx):
-            if req.endpoint_url and req.endpoint_url.startswith("http") and not is_simulated_domain:
+            if http_semali and not simule_host:
                 try:
                     with httpx.Client(timeout=5.0) as client:
                         resp = client.post(
@@ -105,12 +144,20 @@ def create_app(
 
             return True, 10.5, 0.03, ["click", "type", "submit"]
 
-        report: EvaluationReport = eval_runner.run_evaluation(
-            agent_id=req.agent_id,
-            task_executor_fn=agent_executor,
-            runs_per_task=2,
-            job_id=job_id,
-        )
+        try:
+            report: EvaluationReport = eval_runner.run_evaluation(
+                agent_id=req.agent_id,
+                task_executor_fn=agent_executor,
+                runs_per_task=2,
+                job_id=job_id,
+            )
+        except Exception:
+            # D29 (DUZELTILDI): koşucu-patladığında-kayıt-QUEUED-kalıyordu →
+            # akış-rapor-yok-varsayılanlarıyla-"PASSED"/is_certified=true
+            # uyduruyordu ( fail-open). Artık-durum-dürüstçe-FAILED-yazılır ve
+            # istisna-yukarıya-bırakılır ( 500).
+            jobs_db[job_id]["status"] = "FAILED"
+            raise
 
         jobs_db[job_id]["status"] = "COMPLETED"
         jobs_db[job_id]["report"] = report
@@ -129,7 +176,10 @@ def create_app(
             "job_id": job_id,
             "estimated_duration_sec": 300,
             "tee_environment": "AMD-SEV-SNP",
-            "status": "PROCESSING",
+            # SERVER-API-B1 (DUZELTILDI): koşum-BU-İSTEK-içinde-SENKRON
+            # tamamlanır ( rapor+sertifika-yukarıda-yazıldı) — "PROCESSING"
+            # demek-istemciyi-yanıltıyordu ( hiçbir-uçnokta-bu-işi-ilerletmez).
+            "status": "COMPLETED",
         }
 
     @app.get("/v1/evaluations/{job_id}/stream")
@@ -137,8 +187,12 @@ def create_app(
         if job_id not in jobs_db:
             raise HTTPException(status_code=404, detail="Koşum bulunamadı.")
 
-        report = jobs_db[job_id].get("report")
-        cert_id = jobs_db[job_id].get("cert_id", f"urn:veridrome:cert:{job_id}")
+        job = jobs_db[job_id]
+        report = job.get("report")
+        # D29 (DUZELTILDI): rapor-yoksa-uydurma-bir-sertifika-kimliği
+        # ( ``urn:veridrome:cert:{job_id}``) bildirilmez — kayıtlı-bir-cert_id
+        # yoksa-boş-verilir ( fail-closed; var-olmayan-sertifika-ima-edilmez).
+        cert_id = job.get("cert_id", "")
 
         async def event_generator():
             yield f"data: {json.dumps({'event': 'JOB_STARTED', 'step': 'STARTED', 'job_id': job_id})}\n\n"
@@ -146,32 +200,61 @@ def create_app(
             yield f"data: {json.dumps({'event': 'TEE_ALLOCATED', 'step': 'HARDWARE_TEE', 'platform': 'AMD-SEV-SNP', 'pcr0': '0x98f12a4b8823901234567890abcdef'})}\n\n"
             await asyncio.sleep(0.02)
 
-            tasks = TaskRegistry().list_all()
+            # SERVER-API-B4 (DUZELTILDI): görev-dizisi-artık-sabit
+            # ``TaskRegistry()`` değil, koşumun-kullandığı-kayıt-defteridir —
+            # özel-bir-kayıt-defteriyle-koşan-değerlendirme-için-akış
+            # 20-uydurma-görev-bildirmez ( akış-koşumun-gerçeğini-yansıtır).
+            kosum_kutugu = getattr(eval_runner, "registry", None) or TaskRegistry()
+            tasks = kosum_kutugu.list_all()
             for idx, task in enumerate(tasks):
                 yield f"data: {json.dumps({'event': 'TASK_EVALUATING', 'step': 'RUNNING', 'task_id': task.task_id, 'pool': task.pool_type.value, 'title': task.title, 'progress': f'{int((idx+1)/len(tasks)*100)}%'})}\n\n"
                 await asyncio.sleep(0.02)
 
-            verdict = report.anti_gaming.verdict if report else "PASSED"
-            is_cert = report.is_certified if report else True
-            yield f"data: {json.dumps({'event': 'JOB_COMPLETED', 'step': 'COMPLETED', 'status': verdict, 'is_certified': is_cert, 'certificate_id': cert_id, 'merkle_root': report.merkle_root if report else ''})}\n\n"
+            if report is None:
+                # D29: rapor-yok → uydurma-"PASSED"/is_certified=true YOK.
+                # Kaydın-gerçek-durumu ( FAILED/QUEUED) ve-boş-kanıt-alanları.
+                durum = str(job.get("status") or "UNKNOWN")
+                yield f"data: {json.dumps({'event': 'JOB_COMPLETED', 'step': 'COMPLETED', 'status': durum, 'is_certified': False, 'certificate_id': '', 'merkle_root': ''})}\n\n"
+                return
+
+            verdict = report.anti_gaming.verdict
+            yield f"data: {json.dumps({'event': 'JOB_COMPLETED', 'step': 'COMPLETED', 'status': verdict, 'is_certified': report.is_certified, 'certificate_id': cert_id, 'merkle_root': report.merkle_root})}\n\n"
 
         return StreamingResponse(event_generator(), media_type="text/event-stream")
 
     @app.get("/v1/certificates/{cert_id:path}")
     def get_certificate(cert_id: str):
         if cert_id.endswith("/verify"):
-            base_id = cert_id[:-7]
+            base_id = cert_id[: -len("/verify")]
             if base_id not in certificates_db:
                 raise HTTPException(status_code=404, detail="Sertifika bulunamadı.")
             entry = certificates_db[base_id]
             if entry["is_revoked"]:
                 return {"is_valid": False, "reason": "CERTIFICATE_REVOKED"}
             vc = entry["vc"]
-            is_valid = VeridromeCredentialManager.verify_credential(vc, authority_signer.public_key_bytes)
+            # SERVER-API-B7 (DUZELTILDI): eksik/bozuk-yapılı-VC artık-500-
+            # değil-422'dir ( fail-closed: ne-doğrulanmış-sayılır-ne-de-
+            # sunucu-çöker; yapı-yokluğu-istemciye-bildirilir).
+            subject = vc.get("credentialSubject") if isinstance(vc, dict) else None
+            if (not isinstance(subject, dict) or "id" not in subject
+                    or not isinstance(vc.get("validUntil"), str)):
+                # Sayısal 422: starlette'in HTTP_422_UNPROCESSABLE_ENTITY
+                # adı bırakıldı (DeprecationWarning) — sabit-bağlı literal.
+                raise HTTPException(
+                    status_code=422,
+                    detail="Sertifika gövdesi doğrulanamıyor: "
+                           "credentialSubject.id/validUntil eksik veya bozuk.",
+                )
+            # SERVER-API-B2 (DUZELTILDI): doğrulama-artık-ENJEKTE-edilen
+            # yönetici-üzerinden-yapılır — parametre-ölü-değil ( alt-sınıf/
+            # özel-yönetici-doğrulamayı-değiştirebilir). Varsayılan-yolda
+            # sınıf-metodu-birebir-aynı-işi-yapar ( davranış-korunur).
+            is_valid = bool(cred_mgr.verify_credential(
+                vc, authority_signer.public_key_bytes))
             return {
                 "is_valid": is_valid,
                 "cert_id": base_id,
-                "subject": vc["credentialSubject"]["id"],
+                "subject": subject["id"],
                 "expires_at": vc["validUntil"],
             }
 
@@ -187,7 +270,14 @@ def create_app(
 
     @app.post("/v1/certificates/{cert_id:path}/revoke")
     def revoke_certificate(cert_id: str, req: RevokeRequest):
-        target_id = cert_id.replace("/revoke", "")
+        # SERVER-API-B6 (DUZELTILDI): eski-kod ``cert_id.replace("/revoke","")``
+        # ile-TÜM-geçişleri-soyuyordu — kimliğinin-ortasında "/revoke"-geçen
+        # bir-sertifika-istek-YANLIŞ-hedefe-yönlenebiliyordu. Artık-önce
+        # birebir-kimlik-denir; yalnız-``:path``-yol-son-ekini-yuttuğunda
+        # ( ".../revoke/revoke") TEK-bir-son-ek-soyulur.
+        target_id = cert_id
+        if target_id not in certificates_db and target_id.endswith("/revoke"):
+            target_id = target_id[: -len("/revoke")]
         if target_id not in certificates_db:
             raise HTTPException(status_code=404, detail="Sertifika bulunamadı.")
         certificates_db[target_id]["is_revoked"] = True
