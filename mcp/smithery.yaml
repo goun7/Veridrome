@@ -1,0 +1,34 @@
+# Smithery registry yapılandırması — VERIDROME MCP server.
+#
+# Yayınlama (Smithery CLI, Node.js 20+):
+#   smithery auth login   # tarayıcı OAuth — bir kez
+#   smithery mcp publish ./mcp/veridrome.mcpb -n <org>/veridrome
+#
+# Yerel deneme (registry olmadan):
+#   cd mcp/veridrome.mcpb && python -m veridrome.mcp_server
+#
+# Docs: https://smithery.ai/docs  ·  MCP spec: https://modelcontextprotocol.io/specification/2025-06-18
+version: 1
+
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    properties:
+      home:
+        type: string
+        description: "Anahtar ve defter dizini (öntanımlı ~/.veridrome)"
+        default: ""
+  command: python
+  args:
+    - "-m"
+    - "veridrome.mcp_server"
+  env:
+    VERIDROME_HOME:
+      description: "Anahtar ve defter dizini"
+      default: ""
+      required: false
+    VERIDROME_REVOCATION_LEDGER:
+      description: "İptal-defteri dosya-yolu (opsiyonel)"
+      default: ""
+      required: false

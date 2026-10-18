@@ -1,0 +1,47 @@
+{
+  "schema_version": "1.0.0",
+  "name": "veridrome",
+  "display_name": "Veridrome — Agent Test-Certification Tools",
+  "description": "AI agents certify their own test results and anyone verifies them offline. certify builds a did:key-signed certificate from test results; verify checks a certificate independently with no Veridrome install; revoke appends a revocation entry to an append-only ledger; provenance extracts a certificate's origin chain. Stdlib-only JSON-RPC over stdio, no MCP SDK dependency.",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/goun7/Veridrome",
+  "repository": "https://github.com/goun7/Veridrome",
+  "categories": ["developer-tools", "verification", "autonomous-agents"],
+  "transport": "stdio",
+  "install": {
+    "command": "python",
+    "args": ["-m", "veridrome.mcp_server"],
+    "env": {
+      "VERIDROME_HOME": {
+        "description": "Directory for keys and ledgers (default ~/.veridrome).",
+        "required": false
+      },
+      "VERIDROME_REVOCATION_LEDGER": {
+        "description": "Path to the revocation ledger file (optional).",
+        "required": false
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "certify",
+      "description": "Build a did:key-signed certificate from a test run."
+    },
+    {
+      "name": "verify",
+      "description": "Verify a certificate independently, offline, no install."
+    },
+    {
+      "name": "revoke",
+      "description": "Append a revocation entry to the append-only ledger."
+    },
+    {
+      "name": "provenance",
+      "description": "Extract a certificate's origin chain."
+    }
+  ],
+  "privacy": {
+    "keys": "did:key private keys live in VERIDROME_HOME and are never included in a certificate.",
+    "network": "None. All verification is local."
+  }
+}
