@@ -369,3 +369,59 @@ def test_default_str_serilestirme(monkeypatch):
         mod._DISPATCH.clear(); mod._DISPATCH.update(eski)
     metin = r["result"]["content"][0]["text"]
     assert "2026-01-01" in metin
+
+
+# == verify-sarmaliyi-kabul (UX-tuzagi-düzeltmesi) ====================================================
+
+def test_verify_sarmali_kabul_edilir_ic_sertifika_cikarilir(tmp_path, monkeypatch):
+    """LEAD-ölçümü (2026-10-18): certify 'certificate' İÇ-sertifika dönerken
+    bir ajan tüm-sarmaliyı ( {certificate, cert_id, note, ...}) verify'e
+    verince None-issuer RED düşüyordu — sessiz-kabul hatası DEĞİL, gerçek
+    bir UX-tuzakı. verify artık sarmaliyi-kabul-edip iç-sertifikayı çıkarır."""
+    import veridrome.mcp_server as mod
+    monkeypatch.setenv("VERIDROME_HOME", str(tmp_path))
+    mod._DEFAULT_HOME = str(tmp_path)
+    mod._DEFAULT_LEDGER = ""
+    # gerçek-seed-üretimi ( tmp-ENV)
+    if hasattr(mod._load_seed, "cache_clear"):
+        mod._load_seed.cache_clear()
+    try:
+        r = _handle({"method": "tools/call", "id": 1, "params": {"name": "certify",
+            "arguments": {"test_results": [{"name": "t", "outcome": "passed", "duration_ms": 1}],
+                          "commit_sha": "deadbeef"}}})
+        metin = r["result"]["content"][0]["text"]
+        sarmali = json.loads(metin)
+        assert "certificate" in sarmali, "certify sarmal-dönmeli"
+        # ESKI-Davranış ( hata): tüm-sarmali verify'e-ver → None-issuer RED
+        r2 = _handle({"method": "tools/call", "id": 2, "params": {"name": "verify",
+            "arguments": {"certificate": sarmali}}})
+        sonuc = json.loads(r2["result"]["content"][0]["text"])
+        # YENI-davranış: sarmali-kabul → geçerli-sertifika-doğrulanır
+        assert sonuc.get("valid") is True, f"sarmal verify yeşil-olmalı: {sonuc}"
+        assert sonuc.get("signature_valid") is True
+    finally:
+        if hasattr(mod._load_seed, "cache_clear"):
+            mod._load_seed.cache_clear()
+
+
+def test_verify_dogrudan_sertifika_hala_calismali(tmp_path, monkeypatch):
+    """Geri-uyum: doğrudan iç-sertifika-vermek eskiden-çalışıyordu, hâlâ-çalışmalı."""
+    import veridrome.mcp_server as mod
+    monkeypatch.setenv("VERIDROME_HOME", str(tmp_path))
+    mod._DEFAULT_HOME = str(tmp_path)
+    mod._DEFAULT_LEDGER = ""
+    if hasattr(mod._load_seed, "cache_clear"):
+        mod._load_seed.cache_clear()
+    try:
+        r = _handle({"method": "tools/call", "id": 1, "params": {"name": "certify",
+            "arguments": {"test_results": [{"name": "t", "outcome": "passed"}],
+                          "commit_sha": "cafebabe"}}})
+        sarmali = json.loads(r["result"]["content"][0]["text"])
+        ic_cert = sarmali["certificate"]
+        r2 = _handle({"method": "tools/call", "id": 2, "params": {"name": "verify",
+            "arguments": {"certificate": ic_cert}}})
+        sonuc = json.loads(r2["result"]["content"][0]["text"])
+        assert sonuc.get("valid") is True, sonuc
+    finally:
+        if hasattr(mod._load_seed, "cache_clear"):
+            mod._load_seed.cache_clear()

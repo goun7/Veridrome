@@ -139,7 +139,11 @@ _VERIFY_SCHEMA = {
     "properties": {
         "certificate": {
             "type": "object",
-            "description": "Doğrulanacak sertifika JSON'u.",
+            "description": (
+                "Doğrulanacak sertifika JSON'u. Doğrudan-sertifika VEYA "
+                "certify'nin-döndürdüğü sarmal ( {certificate, cert_id, ...}) "
+                "kabul-edilir — sarmal-verilince iç-sertifika-çıkarılır."
+            ),
         },
         "check_revocation": {
             "type": "boolean",
@@ -257,6 +261,13 @@ def _tool_verify(args: Dict[str, Any]) -> Dict[str, Any]:
     cert = args.get("certificate")
     if not isinstance(cert, dict):
         return _error("certificate bir JSON nesnesi olmalı")
+
+    # Sarmaliyi-kabul ( UX-tuzagi-düzeltmesi, 2026-10-18): certify aracı
+    # {certificate, cert_id, issuer_did, note, ...} SARMALI döner. Bir ajan
+    # tüm-sarmaliyi verify'e verince issuer=None RED düşüyordu — noopDegil,
+    # gerçek-kullanıcı-hatası. İç-sertifikayı-çıkart, sonra-doğrula.
+    if "certificate" in cert and isinstance(cert.get("certificate"), dict):
+        cert = cert["certificate"]
 
     result = verify_certificate(cert)
     out: Dict[str, Any] = result.to_dict()
