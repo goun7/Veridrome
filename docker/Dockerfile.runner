@@ -36,6 +36,7 @@ WORKDIR /app
 
 # Bağımlılıkların yüklenmesi
 COPY pyproject.toml README.md ./
+COPY src/ /app/src/
 RUN pip install --no-cache-dir .
 RUN playwright install --with-deps chromium
 
