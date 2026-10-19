@@ -160,11 +160,22 @@ Hızlı-erişim: [src/veridrome/certificate/tamga_anchor.py](src/veridrome/certi
 ### MCP sunucusu ( MCP 2025-06-18)
 
 ```bash
-veridrome mcp     # stdio-transportu; hiçbir MCP-SDK'sı yok ( json+sys.stdin)
+veridrome mcp            # stdio-transportu; hiçbir MCP-SDK'sı yok ( json+sys.stdin)
+python3 mcp/server.py    # salt-DOĞRULAYAN ayna-cephe: üretmez, dosyaya YAZMAZ
 ```
 
-Araçlar: `certify`, `verify`, `revoke`, `provenance` ( ödeme-makbuzu ile).
+İki cephe, iki sözleşme. `veridrome mcp` üretime-izinli ( certify/revoke
+yazar); `mcp/server.py` ise salt-doğrular:
+
+Araçlar: `certificate_status`, `check_revocation`, `verify_anchor`,
+`manifest` — hepsi mevcut API'lerin sıfır-yeni-mantıkla sarması.
 `initialize` → `tools/list` → `tools/call` ( JSON-RPC, content-blokları).
+Her araç GREEN/RED JSON kanıtı döndürür — traceback ASLA ( AT-192).
+
+Salt-oku P0-sözü davranışla-ölçülür:
+`tests/test_mcp_server.py::test_p0_salt_oku_sunucu_hicbir_dosya_yazmaz`
+sunucuyu TEMP-eve koyup 4 aracı + bilinmeyen-aracı çağırır, sonra
+TEMP-dizininde tek-yeni-dosya-çıkmadığını assert-eder.
 
 ```jsonc
 // tools/call { "name": "provenance", "arguments": {
@@ -227,12 +238,12 @@ RFC-8032 §7.1 **resmi test-vektörleri** ile çapraz-doğrulanmıştır
 ## Test
 
 ```bash
-python3 -m pytest tests/ -q     # 1.565-passed
+python3 -m pytest tests/ -q     # 1.862-passed
 ```
 
-Son koşum ( 2026-10-18 LEED-ölçümü): **1.832 passed, 0 failed rc=0**.
+Son koşum ( 2026-10-19 gece-turu LEAD-ölçümü): **1.862 passed, 0 failed rc=0** ( MCP-cephesinin salt-oku P0-pin'i dahil).
 Önceki koşumda 1.565 olarak-yazılmıştı — bu sayı STALE'di; mevcut
-suit 41 test-dosyasında 1.832 testi kapsar ( sertifika-çekirdek, did:key,
+suit 41 test-dosyasında 1.862 testi kapsar ( sertifika-çekirdek, did:key,
 sertifika-ürütm-hattı, Tamga/Veridict-sabitleme, API/CLI/runner ve
 diğer-modüller). Hızlı-geri-bildirim için `-x` ve `--ff` desteklenir.
 
