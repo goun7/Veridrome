@@ -20,12 +20,19 @@ dependencies = [
     "pyyaml>=6.0",
     "opentelemetry-api>=1.20.0",
     "opentelemetry-sdk>=1.20.0",
+    # server- ( api.py/VAPAP-middleware) FastAPI-uzarina-insaa-edildi;
+    # testlerin-4-modulu-de-bunu-import-ediyor. Eksiklikte collection hatasi.
+    "fastapi>=0.110.0",
+    "starlette>=0.36.0",
+    "uvicorn>=0.29.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7.4.0",
     "pytest-asyncio>=0.21.0",
+    # starlette>=1.6-testclient-httpx2-ister ( aksi-halde-deprecation-hatasi).
+    "httpx2>=0.40",
 ]
 
 [project.scripts]

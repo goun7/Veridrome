@@ -67,8 +67,22 @@ def _tamga_root() -> str | None:
 TAMGA_ROOT = _tamga_root()
 GENESIS = "0" * 64
 
+# Tamga'nin runner'i modul-seviyesinde nacl- ( PyNaCl) import-eder; aksi
+# halde alt-surec rc=1 verir ve bu testler yanlis-bir-assert'e-takilir.
+# Tamga makinede-olsa-bile nacl-YOKSA parite-testleri-skip-edilir (
+# CI'da-kardes-YOK-iicin-ilk-kosul-zaten-onceden-gecer). Testin-alt-sureci
+# sys.executable-ile-kosuldugu-icin ayni-yorumlayicida-nacl-olmasi-yeterli.
+def _tamga_runner_calisir_mi() -> bool:
+    if TAMGA_ROOT is None:
+        return False
+    sonuc = subprocess.run(
+        [sys.executable, "-c", "import nacl"],
+        capture_output=True, timeout=60)
+    return sonuc.returncode == 0
+
 has_tamga = pytest.mark.skipif(
-    TAMGA_ROOT is None, reason="TamgaProtocol bu makinede yok ( mesh-kardeşi)")
+    not _tamga_runner_calisir_mi(),
+    reason="TamgaProtocol-bu-makinede-yok-veya-nacl-kurulu-degil ( mesh-kardesi)")
 
 
 # ---------------------------------------------------------------------------
