@@ -19,7 +19,7 @@ bir CI koşumunu `did:key`-imzalı, sıfır-ağ, stdlib-only sertifikaya dönü�
 ```bash
 cd veridrome/73-Veridrome
 pip install -e .                     # cryptography + pydantic ( zincir-opsiyonel)
-python3 -m pytest tests/ -q          # 121-passed
+python3 -m pytest tests/ -q          # 1.863-passed ( 3-Tamga-paritesi-NACL-YOK-skip)
 
 # 1) İmzalama anahtarı ( did:key — tohum ASLA yazdırılmaz, 0600-saklanır)
 veridrome keygen
@@ -238,12 +238,12 @@ RFC-8032 §7.1 **resmi test-vektörleri** ile çapraz-doğrulanmıştır
 ## Test
 
 ```bash
-python3 -m pytest tests/ -q     # 1.862-passed
+python3 -m pytest tests/ -q     # 1.863-passed
 ```
 
-Son koşum ( 2026-10-19 gece-turu LEAD-ölçümü): **1.862 passed, 0 failed rc=0** ( MCP-cephesinin salt-oku P0-pin'i dahil).
+Son koşum ( 2026-10-22 G49-ölçümü): **1.863 passed, 0 failed rc=0** ( ci-benzeri-taze-venv-de-1860-passed+3-skip-Tamga-paritesi-NACL-YOK).
 Önceki koşumda 1.565 olarak-yazılmıştı — bu sayı STALE'di; mevcut
-suit 41 test-dosyasında 1.862 testi kapsar ( sertifika-çekirdek, did:key,
+suit 41 test-dosyasında 1.863 testi kapsar ( sertifika-çekirdek, did:key,
 sertifika-ürütm-hattı, Tamga/Veridict-sabitleme, API/CLI/runner ve
 diğer-modüller). Hızlı-geri-bildirim için `-x` ve `--ff` desteklenir.
 
