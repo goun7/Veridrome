@@ -2,9 +2,9 @@ name: Veridrome CI/CD Pipeline
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "master" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "master" ]
 
 jobs:
   test-and-verify:
@@ -36,9 +36,9 @@ jobs:
         run: |
           playwright install --with-deps chromium
 
-      - name: Run Full Pytest Suite (33+ Tests)
+      - name: Run Full Pytest Suite
         run: |
-          PYTHONPATH=src pytest tests/ -v
+          PYTHONPATH=src pytest tests/ -q
 
       - name: Run E2E Live Chromium Benchmark
         run: |
