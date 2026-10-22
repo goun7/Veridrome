@@ -87,14 +87,35 @@ def _now_utc() -> datetime.datetime:
 
 
 def _parse_iso8601(value: str) -> Optional[datetime.datetime]:
-    """ISO-8601'i timezone-aware datetime'a dönüştürür; başarısızda None."""
+    """ISO-8601'i timezone-aware datetime'a dönüştürür; başarısizda None.
+
+    'T24:00:00' ISO-8601 gun-sonu-gosterimi Py3.12'de fromisoformat-tarafindan
+    RED-edilir ( sadece-3.14+-destekler). ISO-8601-1-5.2.1.2'ye-gore-gun-sonu
+    '24' SAATI sonraki-gunun-00:00'ina-yuvarlanir- ( eski-surum-uyumu).
+    """
+    metin = str(value).replace("Z", "+00:00")
     try:
-        dt = datetime.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        dt = datetime.datetime.fromisoformat(metin)
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=datetime.timezone.utc)
         return dt
     except Exception:
-        return None
+        pass
+    # 'T24:00[:00[.fff]]' dalini-el-le-yeneden-dene- ( ISO-8601-gun-sonu)
+    import re as _re
+    m = _re.search(
+        r"(\d{4}-\d{2}-\d{2})[T ]24:00(?::00(?:\.\d{1,6})?)?"
+        r"(?=[+-]\d{2}:?\d{2}$|$)", metin)
+    if m:
+        try:
+            dt = datetime.datetime.fromisoformat(m.group(1) + "T00:00:00")
+            dt = dt + datetime.timedelta(days=1)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=datetime.timezone.utc)
+            return dt
+        except Exception:
+            return None
+    return None
 
 
 # ---------------------------------------------------------------------------
